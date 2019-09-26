@@ -1,8 +1,8 @@
 #include "gate.h"
 
-struct Gate gate_new_from_matrix(double _Complex matrix[2][2], double params[], ReparamFnPtr reparamFn)
+Gate gate_new_from_matrix(double _Complex matrix[2][2], double params[], ReparamFnPtr reparamFn)
 {
-    struct Gate result;
+    Gate result;
     //result.matrix = matrix;
     memcpy(&result.matrix, &matrix, GATE_SINGLE_QUBIT_SIZE);
     result.reparamFn = reparamFn;
@@ -10,12 +10,12 @@ struct Gate gate_new_from_matrix(double _Complex matrix[2][2], double params[], 
     return result;
 }
 
-struct Result gate_new_from_identifier(enum GateId identifier, double params[])
+Result gate_new_from_identifier(enum GateId identifier, double params[])
 {
-    struct Result result;
+    Result result;
 
     // Gate object to return pointer to (wrapped in Result)
-    struct Gate *result_gate_ptr = (struct Gate *)malloc(sizeof(struct Gate));
+    Gate *result_gate_ptr = (Gate *)malloc(sizeof(Gate));
 
     // Determine correct matrix and reparam_fn (latter can be NULL)
     double _Complex **matrix = alloca(GATE_SINGLE_QUBIT_SIZE);
@@ -24,42 +24,42 @@ struct Result gate_new_from_identifier(enum GateId identifier, double params[])
     {
     case GateI:
     {
-        memcpy(&matrix, &static_gate_i, GATE_SINGLE_QUBIT_SIZE);
+        memcpy(&matrix, &gate_static_i, GATE_SINGLE_QUBIT_SIZE);
     }
     break;
     case GateX:
     {
-        memcpy(&matrix, &static_gate_x, GATE_SINGLE_QUBIT_SIZE);
+        memcpy(&matrix, &gate_static_x, GATE_SINGLE_QUBIT_SIZE);
     }
     break;
     case GateY:
     {
-        memcpy(&matrix, &static_gate_y, GATE_SINGLE_QUBIT_SIZE);
+        memcpy(&matrix, &gate_static_y, GATE_SINGLE_QUBIT_SIZE);
     }
     break;
     case GateZ:
     {
-        memcpy(&matrix, &static_gate_z, GATE_SINGLE_QUBIT_SIZE);
+        memcpy(&matrix, &gate_static_z, GATE_SINGLE_QUBIT_SIZE);
     }
     break;
     case GateH:
     {
-        memcpy(&matrix, &static_gate_h, GATE_SINGLE_QUBIT_SIZE);
+        memcpy(&matrix, &gate_static_h, GATE_SINGLE_QUBIT_SIZE);
     }
     break;
     case GateSqrtX:
     {
-        memcpy(&matrix, &static_gate_sqrt_x, GATE_SINGLE_QUBIT_SIZE);
+        memcpy(&matrix, &gate_static_sqrt_x, GATE_SINGLE_QUBIT_SIZE);
     }
     break;
     case GateT:
     {
-        memcpy(&matrix, &static_gate_t, GATE_SINGLE_QUBIT_SIZE);
+        memcpy(&matrix, &gate_static_t, GATE_SINGLE_QUBIT_SIZE);
     }
     break;
     case GateS:
     {
-        memcpy(&matrix, &static_gate_s, GATE_SINGLE_QUBIT_SIZE);
+        memcpy(&matrix, &gate_static_s, GATE_SINGLE_QUBIT_SIZE);
     }
     break;
     case GateRx:
@@ -122,7 +122,7 @@ struct Result gate_new_from_identifier(enum GateId identifier, double params[])
 
     // Pack everything into heap allocated struct
     {
-        struct Gate result_gate = *result_gate_ptr;
+        Gate result_gate = *result_gate_ptr;
         result_gate.id = identifier;
         memcpy(&result_gate.matrix, &matrix, GATE_SINGLE_QUBIT_SIZE);
         result_gate.reparamFn = reparam_fn;
