@@ -4,6 +4,7 @@ Result result_get_empty_valid()
 {
     Result empty_valid;
     empty_valid.valid = true;
+    empty_valid.data = NULL;
     return empty_valid;
 }
 
@@ -15,7 +16,7 @@ Result result_get_valid_with_data(void *data)
     return data_valid;
 }
 
-Result result_get_invalid_reason(char *reason)
+Result result_get_invalid_reason(const char *reason)
 {
     Result invalid;
     invalid.valid = false;
@@ -23,11 +24,43 @@ Result result_get_invalid_reason(char *reason)
     return invalid;
 }
 
+void *result_unwrap(Result result)
+{
+    if (!result.valid)
+    {
+        puts(result.reason);
+        abort();
+    }
+
+    return result.data;
+}
+
 Option option_none()
 {
     Option new_option;
     new_option.some = false;
     new_option.data = NULL;
+    return new_option;
+}
+
+Option_Int option_none_int()
+{
+    Option_Int new_option;
+    new_option.some = false;
+    return new_option;
+}
+
+Option_Uint option_none_uint()
+{
+    Option_Uint new_option;
+    new_option.some = false;
+    return new_option;
+}
+
+Option_Double option_none_double()
+{
+    Option_Double new_option;
+    new_option.some = false;
     return new_option;
 }
 

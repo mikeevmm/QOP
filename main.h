@@ -1,4 +1,5 @@
 #pragma once
 #include <stdio.h>
+#include "circuit.h"
 #include "gate.h"
-#include "util.h"
+#include "option.h"

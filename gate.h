@@ -6,7 +6,7 @@
 #include <math.h>
 #include "option.h"
 
-enum GateId
+typedef enum GateId
 {
     GateNoId,
     GateCustom,
@@ -21,10 +21,10 @@ enum GateId
     GateRx,
     GateRy,
     GateRz,
-};
+} GateId;
 
 // Constant sizes for use with malloc
-static const int GATE_SINGLE_QUBIT_SIZE = 4 * sizeof(double _Complex);
+static const size_t GATE_SINGLE_QUBIT_SIZE = 4 * sizeof(double _Complex *);
 
 // Explicit static gate declarations
 static double _Complex gate_static_i[2][2] = {{1., 0.},
@@ -59,10 +59,9 @@ typedef struct Gate
     enum GateId id;
 } Gate;
 
-// Reparameterization functions
 void reparameterize_rx_gate(double _Complex matrix[2][2], double params[]);
 void reparameterize_ry_gate(double _Complex matrix[2][2], double params[]);
 void reparameterize_rz_gate(double _Complex matrix[2][2], double params[]);
 
-// Create a gate from a matrix and an optional reparameterization function
-Gate gate_new_from_matrix(double _Complex matrix[2][2], double params[], ReparamFnPtr reparamFn);
+Gate gate_new_from_matrix(double _Complex matrix[2][2], ReparamFnPtr reparamFn);
+Result gate_new_from_identifier(GateId identifier, double params[]);

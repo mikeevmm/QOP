@@ -1,6 +1,6 @@
 #include "gate.h"
 
-Gate gate_new_from_matrix(double _Complex matrix[2][2], double params[], ReparamFnPtr reparamFn)
+Gate gate_new_from_matrix(double _Complex matrix[2][2], ReparamFnPtr reparamFn)
 {
     Gate result;
     //result.matrix = matrix;
@@ -13,12 +13,24 @@ Gate gate_new_from_matrix(double _Complex matrix[2][2], double params[], Reparam
 Result gate_new_from_identifier(enum GateId identifier, double params[])
 {
     Result result;
+    result.valid = true;
+    result.reason = "unspecified reason";
 
     // Gate object to return pointer to (wrapped in Result)
     Gate *result_gate_ptr = (Gate *)malloc(sizeof(Gate));
+    if (result_gate_ptr == NULL)
+    {
+        return result_get_invalid_reason("could not malloc");
+    }
 
     // Determine correct matrix and reparam_fn (latter can be NULL)
-    double _Complex **matrix = alloca(GATE_SINGLE_QUBIT_SIZE);
+    double _Complex matrix[2][2] = {{0, 0}, {0, 0}};
+    if (matrix == NULL)
+    {
+        free(result_gate_ptr);
+        return result_get_invalid_reason("could not alloca");
+    }
+
     ReparamFnPtr reparam_fn = NULL;
     switch (identifier)
     {
