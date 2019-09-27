@@ -22,13 +22,9 @@ Result vector_resize(Vector *v, size_t size)
     else if (size > v->capacity)
     {
         // Resize to next power of 2
-        size_t new_capacity = 1;
-        {
-            size_t work = size;
-            while (work >>= 1)
-                new_capacity <<= 1;
+        size_t new_capacity = v->capacity;
+        while (new_capacity < size)
             new_capacity <<= 1;
-        }
 
         void *resized = realloc(v->data, new_capacity * v->obj_size);
         if (!resized)
@@ -118,4 +114,16 @@ Result vector_pop(Vector *v, void *object)
     }
     v->size -= 1;
     vector_resize(v, v->size);
+
+    Result result;
+    result.valid = true;
+    result.data = moved;
+    return result;
+}
+
+Result vector_free(Vector *v)
+{
+    free(v->data);
+    free(v);
+    v = NULL;
 }

@@ -18,3 +18,4 @@ Result vector_raw_push(Vector *v, void *object);
 Result vector_extend(Vector *v, void *object, size_t obj_count);
 Result vector_extend_raw(Vector *v, void *object, size_t obj_count);
 Result vector_pop(Vector *v, void *object);
+Result vector_free(Vector *v);
