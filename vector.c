@@ -73,11 +73,12 @@ Result vector_push(Vector *v, void *object)
 
 Result vector_raw_push(Vector *v, void *object)
 {
-    void *moved = memmove(v->data + v->obj_size * v->size, object, v->obj_size);
+    void *moved = memcpy(v->data + v->obj_size * v->size, object, v->obj_size);
     if (!moved)
     {
         return result_get_invalid_reason("could not memcpy");
     }
+    free(object);
     v->size += 1;
     return result_get_valid_with_data(v);
 }
@@ -97,11 +98,12 @@ Result vector_extend(Vector *v, void *object, size_t obj_count)
 
 Result vector_extend_raw(Vector *v, void *object, size_t obj_count)
 {
-    void *moved = memmove(v->data + v->obj_size * v->size, object, v->obj_size * obj_count);
+    void *moved = memcpy(v->data + v->obj_size * v->size, object, v->obj_size * obj_count);
     if (!moved)
     {
         return result_get_invalid_reason("failed to memcpy");
     }
+    free(object);
     v->size += obj_count;
     return result_get_valid_with_data(v);
 }
