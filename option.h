@@ -22,21 +22,21 @@ typedef struct Option
 typedef struct Option_Uint
 {
     bool some;
-    unsigned int *data;
+    unsigned int data;
 } Option_Uint;
 
 
 typedef struct Option_Int
 {
     bool some;
-    int *data;
+    int data;
 } Option_Int;
 
 
 typedef struct Option_Double
 {
     bool some;
-    double *data;
+    double data;
 } Option_Double;
 
 Option option_none();

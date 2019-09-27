@@ -43,7 +43,7 @@ Option_Int option_from_int(int data)
 {
     Option_Int new_option;
     new_option.some = true;
-    new_option.data = &data;
+    new_option.data = data;
     return new_option;
 }
 
@@ -51,7 +51,7 @@ Option_Uint option_from_uint(unsigned int data)
 {
     Option_Uint new_option;
     new_option.some = true;
-    new_option.data = &data;
+    new_option.data = data;
     return new_option;
 }
 
@@ -59,6 +59,6 @@ Option_Double option_from_double(double data)
 {
     Option_Double new_option;
     new_option.some = true;
-    new_option.data = &data;
+    new_option.data = data;
     return new_option;
 }

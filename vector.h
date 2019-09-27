@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define ITER_NEXT(NEXT, ITER) (NEXT = vector_iter_next(&ITER)).some
+
 typedef struct Vector
 {
     void *data;
@@ -18,6 +20,7 @@ typedef struct Vector_Iter
 } Vector_Iter;
 
 Result vector_init(Vector *v, size_t object_size, size_t init_capacity);
+Result vector_get_raw(Vector *v, size_t index);
 Result vector_resize(Vector *v, size_t size);
 Result vector_push(Vector *v, void *object);
 Result vector_raw_push(Vector *v, void *object);

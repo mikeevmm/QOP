@@ -10,7 +10,13 @@ Result vector_init(Vector *v, size_t object_size, size_t init_capacity)
     v->capacity = init_capacity;
     v->obj_size = object_size;
 
-    return result_get_empty_valid();
+    return result_get_valid_with_data(v);
+}
+
+Result vector_get_raw(Vector *v, size_t index)
+{
+    void *object = v->data + index * v->obj_size;
+    return result_get_valid_with_data(object);
 }
 
 Result vector_resize(Vector *v, size_t size)
@@ -138,7 +144,9 @@ Option vector_iter_next(Vector_Iter *vi)
         void *object = vi->vector->data + vi->vector->obj_size * vi->position;
         vi->position += 1;
         return option_some_with_data(object);
-    } else {
+    }
+    else
+    {
         return option_none();
     }
 }
