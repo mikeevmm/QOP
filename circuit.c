@@ -79,7 +79,7 @@ Result circuit_compact(Circuit *circuit)
 
             if (soft_gate.control.some)
             {
-                unsigned int control = *(unsigned int *)(soft_gate.control.data);
+                unsigned int control = soft_gate.control.data;
                 if (leftmost[soft_gate.position.qubit] > leftmost[control])
                 {
                     new_position = leftmost[soft_gate.position.qubit];
