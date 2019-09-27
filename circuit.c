@@ -255,7 +255,7 @@ Result circuit_run(Circuit *circuit, double _Complex inout[])
         }
     }
 
-    void *copy = memcpy(&inout, &output, sizeof(output));
+    void *copy = memcpy(inout, output, sizeof(output));
     if (copy == NULL)
         return result_get_invalid_reason("memcpy failed");
     return result_get_valid_with_data(copy);

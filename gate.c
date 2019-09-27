@@ -4,7 +4,7 @@ Gate gate_new_from_matrix(double _Complex matrix[2][2], double params[], Reparam
 {
     Gate result;
     //result.matrix = matrix;
-    memcpy(&result.matrix, &matrix, GATE_SINGLE_QUBIT_SIZE);
+    memcpy(result.matrix, matrix, GATE_SINGLE_QUBIT_SIZE);
     result.reparamFn = reparamFn;
     result.id = GateCustom;
     return result;
@@ -24,42 +24,42 @@ Result gate_new_from_identifier(enum GateId identifier, double params[])
     {
     case GateI:
     {
-        memcpy(&matrix, &gate_static_i, GATE_SINGLE_QUBIT_SIZE);
+        memcpy(matrix, gate_static_i, GATE_SINGLE_QUBIT_SIZE);
     }
     break;
     case GateX:
     {
-        memcpy(&matrix, &gate_static_x, GATE_SINGLE_QUBIT_SIZE);
+        memcpy(matrix, gate_static_x, GATE_SINGLE_QUBIT_SIZE);
     }
     break;
     case GateY:
     {
-        memcpy(&matrix, &gate_static_y, GATE_SINGLE_QUBIT_SIZE);
+        memcpy(matrix, gate_static_y, GATE_SINGLE_QUBIT_SIZE);
     }
     break;
     case GateZ:
     {
-        memcpy(&matrix, &gate_static_z, GATE_SINGLE_QUBIT_SIZE);
+        memcpy(matrix, gate_static_z, GATE_SINGLE_QUBIT_SIZE);
     }
     break;
     case GateH:
     {
-        memcpy(&matrix, &gate_static_h, GATE_SINGLE_QUBIT_SIZE);
+        memcpy(matrix, gate_static_h, GATE_SINGLE_QUBIT_SIZE);
     }
     break;
     case GateSqrtX:
     {
-        memcpy(&matrix, &gate_static_sqrt_x, GATE_SINGLE_QUBIT_SIZE);
+        memcpy(matrix, gate_static_sqrt_x, GATE_SINGLE_QUBIT_SIZE);
     }
     break;
     case GateT:
     {
-        memcpy(&matrix, &gate_static_t, GATE_SINGLE_QUBIT_SIZE);
+        memcpy(matrix, gate_static_t, GATE_SINGLE_QUBIT_SIZE);
     }
     break;
     case GateS:
     {
-        memcpy(&matrix, &gate_static_s, GATE_SINGLE_QUBIT_SIZE);
+        memcpy(matrix, gate_static_s, GATE_SINGLE_QUBIT_SIZE);
     }
     break;
     case GateRx:
@@ -74,7 +74,7 @@ Result gate_new_from_identifier(enum GateId identifier, double params[])
         double theta = params[0];
         double _Complex theta_matrix[2][2] = {{sin(theta / 2), -sin(theta / 2) * _Complex_I},
                                               {-sin(theta / 2) * _Complex_I, cos(theta / 2)}};
-        memcpy(&matrix, &theta_matrix, GATE_SINGLE_QUBIT_SIZE);
+        memcpy(matrix, theta_matrix, GATE_SINGLE_QUBIT_SIZE);
         reparam_fn = &reparameterize_rx_gate;
         break;
     case GateRy:
@@ -88,7 +88,7 @@ Result gate_new_from_identifier(enum GateId identifier, double params[])
         double theta = params[0];
         double _Complex theta_matrix[2][2] = {{cos(theta / 2), -sin(theta / 2)},
                                               {sin(theta / 2), cos(theta / 2)}};
-        memcpy(&matrix, &theta_matrix, GATE_SINGLE_QUBIT_SIZE);
+        memcpy(matrix, theta_matrix, GATE_SINGLE_QUBIT_SIZE);
         reparam_fn = &reparameterize_ry_gate;
         break;
     }
@@ -103,7 +103,7 @@ Result gate_new_from_identifier(enum GateId identifier, double params[])
         double theta = params[0];
         double _Complex theta_matrix[2][2] = {{1.0, 0.0},
                                               {0.0, cexp(_Complex_I * theta)}};
-        memcpy(&matrix, &theta_matrix, GATE_SINGLE_QUBIT_SIZE);
+        memcpy(matrix, theta_matrix, GATE_SINGLE_QUBIT_SIZE);
         reparam_fn = &reparameterize_rz_gate;
         break;
     }
@@ -124,7 +124,7 @@ Result gate_new_from_identifier(enum GateId identifier, double params[])
     {
         Gate result_gate = *result_gate_ptr;
         result_gate.id = identifier;
-        memcpy(&result_gate.matrix, &matrix, GATE_SINGLE_QUBIT_SIZE);
+        memcpy(result_gate.matrix, matrix, GATE_SINGLE_QUBIT_SIZE);
         result_gate.reparamFn = reparam_fn;
     }
 
