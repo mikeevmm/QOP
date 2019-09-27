@@ -159,11 +159,6 @@ Result circuit_run(Circuit *circuit, double _Complex inout[])
         return result_get_invalid_reason("circuit hardened_gates is null");
     }
 
-    if (sizeof(inout) / sizeof(double _Complex) != (1 << (circuit->depth[0])))
-    {
-        return result_get_invalid_reason("inout array has wrong length");
-    }
-
     double _Complex output[1 << (circuit->depth[0])];
 
     const size_t gates_count = circuit->soft_gates.size;
@@ -260,7 +255,7 @@ Result circuit_run(Circuit *circuit, double _Complex inout[])
         }
     }
 
-    void* copy = memcpy(&inout, &output, sizeof(output));
+    void *copy = memcpy(&inout, &output, sizeof(output));
     if (copy == NULL)
         return result_get_invalid_reason("memcpy failed");
     return result_get_valid_with_data(copy);
