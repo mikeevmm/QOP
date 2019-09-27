@@ -17,7 +17,7 @@ Result vector_resize(Vector *v, size_t size)
 {
     if (size == v->capacity)
     {
-        return result_get_empty_valid();
+        return result_get_valid_with_data(v);
     }
     else if (size > v->capacity)
     {
@@ -33,7 +33,7 @@ Result vector_resize(Vector *v, size_t size)
         }
         v->data = resized;
         v->capacity = new_capacity;
-        return result_get_empty_valid();
+        return result_get_valid_with_data(v);
     }
     else if (size <= v->capacity / 2)
     {
@@ -48,7 +48,7 @@ Result vector_resize(Vector *v, size_t size)
         }
         v->data = resized;
         v->capacity = new_capacity;
-        return result_get_empty_valid();
+        return result_get_valid_with_data(v);
     }
 }
 
@@ -67,13 +67,13 @@ Result vector_push(Vector *v, void *object)
 
 Result vector_raw_push(Vector *v, void *object)
 {
-    void *copied = memcpy(v->data + v->obj_size * v->size, object, v->obj_size);
-    if (!copied)
+    void *moved = memmove(v->data + v->obj_size * v->size, object, v->obj_size);
+    if (!moved)
     {
         return result_get_invalid_reason("could not memcpy");
     }
     v->size += 1;
-    return result_get_empty_valid();
+    return result_get_valid_with_data(v);
 }
 
 Result vector_extend(Vector *v, void *object, size_t obj_count)
@@ -91,13 +91,13 @@ Result vector_extend(Vector *v, void *object, size_t obj_count)
 
 Result vector_extend_raw(Vector *v, void *object, size_t obj_count)
 {
-    void *copied = memcpy(v->data + v->obj_size * v->size, object, v->obj_size * obj_count);
-    if (!copied)
+    void *moved = memmove(v->data + v->obj_size * v->size, object, v->obj_size * obj_count);
+    if (!moved)
     {
         return result_get_invalid_reason("failed to memcpy");
     }
     v->size += obj_count;
-    return result_get_empty_valid();
+    return result_get_valid_with_data(v);
 }
 
 Result vector_pop(Vector *v, void *object)
@@ -115,15 +115,30 @@ Result vector_pop(Vector *v, void *object)
     v->size -= 1;
     vector_resize(v, v->size);
 
-    Result result;
-    result.valid = true;
-    result.data = moved;
-    return result;
+    return result_get_valid_with_data(v);
 }
 
 Result vector_free(Vector *v)
 {
     free(v->data);
-    free(v);
-    v = NULL;
+}
+
+Vector_Iter vector_iter_create(Vector *v)
+{
+    Vector_Iter new_iter;
+    new_iter.position = 0;
+    new_iter.vector = v;
+    return new_iter;
+}
+
+Option vector_iter_next(Vector_Iter *vi)
+{
+    if (vi->position < vi->vector->size)
+    {
+        void *object = vi->vector->data + vi->vector->obj_size * vi->position;
+        vi->position += 1;
+        return option_some_with_data(object);
+    } else {
+        return option_none();
+    }
 }
