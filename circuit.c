@@ -2,6 +2,11 @@
 
 Result circuit_create(unsigned int qubit_count)
 {
+    if (qubit_count == 0)
+    {
+        return result_get_invalid_reason("cannot create a 0-qubit circuit");
+    }
+
     Vector soft_gates_vector;
     Result vector_init_r = vector_init(&soft_gates_vector, sizeof(SoftGate), qubit_count);
     if (!vector_init_r.valid)
@@ -9,7 +14,7 @@ Result circuit_create(unsigned int qubit_count)
         return vector_init_r;
     }
 
-    Circuit *new_circuit = malloc(sizeof(Circuit));
+    Circuit *new_circuit = (Circuit *)malloc(sizeof(Circuit));
     if (new_circuit == NULL)
     {
         return result_get_invalid_reason("could not malloc circuit");
@@ -68,6 +73,8 @@ Result circuit_compact(Circuit *circuit)
     }
 
     unsigned int leftmost[circuit->depth[0]];
+    memset(leftmost, 0, sizeof(leftmost));
+    
     Vector_Iter soft_gates_iter = vector_iter_create(&circuit->soft_gates);
 
     {
@@ -75,7 +82,7 @@ Result circuit_compact(Circuit *circuit)
         while (ITER_NEXT(next, soft_gates_iter))
         {
             SoftGate soft_gate = *(SoftGate *)next.data;
-            unsigned int new_position;
+            unsigned int new_position = 0;
 
             if (soft_gate.control.some)
             {
@@ -127,7 +134,7 @@ Result circuit_harden(Circuit *circuit)
         free(circuit->hardened_gates);
     }
 
-    Gate **hardened_gates = malloc(circuit->depth[0] * circuit->depth[1] * sizeof(Gate *));
+    Gate *hardened_gates = (Gate *)malloc(circuit->depth[0] * circuit->depth[1] * sizeof(Gate *));
     if (hardened_gates == NULL)
     {
         return result_get_invalid_reason("could not malloc hardened_gates");
@@ -138,8 +145,7 @@ Result circuit_harden(Circuit *circuit)
     while (ITER_NEXT(next, soft_gates_iter))
     {
         SoftGate gate = *(SoftGate *)next.data;
-        *(hardened_gates + gate.position.qubit + circuit->depth[0] * gate.position.slice) =
-            &gate.gate;
+        memcpy(hardened_gates + gate.position.qubit + circuit->depth[0] * gate.position.slice, &gate.gate, sizeof(Gate));
     }
 
     circuit->hardened_gates = hardened_gates;
@@ -147,7 +153,7 @@ Result circuit_harden(Circuit *circuit)
     return result_get_valid_with_data(circuit);
 }
 
-Result circuit_run(Circuit *circuit, double _Complex inout[])
+Result circuit_run(Circuit *circuit, double _Complex (*inout)[])
 {
     if (circuit == NULL)
     {
@@ -236,7 +242,7 @@ Result circuit_run(Circuit *circuit, double _Complex inout[])
             for (unsigned int j = 0; j < (circuit->depth[0] - relevant_count); ++j)
             {
                 unsigned int out_index = (proj & mask) | ((z | x) & (~mask));
-                output[out_index] += coef * inout[z | x];
+                output[out_index] += coef * (*inout)[z | x];
 
                 z += 1;
                 while ((z & ncmask) != z)
@@ -274,8 +280,7 @@ Result circuit_free(Circuit *circuit)
         return vector_free_r;
     }
 
-    if (circuit->hardened_gates != NULL)
-        free(circuit->hardened_gates);
+    free(circuit->hardened_gates);
     free(circuit);
     circuit = NULL;
 

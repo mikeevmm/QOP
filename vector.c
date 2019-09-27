@@ -2,7 +2,7 @@
 
 Result vector_init(Vector *v, size_t object_size, size_t init_capacity)
 {
-    v->data = malloc(init_capacity * object_size);
+    v->data = (void *)malloc(init_capacity * object_size);
     if (!v->data)
         return result_get_invalid_reason("could not malloc");
 
@@ -78,7 +78,6 @@ Result vector_raw_push(Vector *v, void *object)
     {
         return result_get_invalid_reason("could not memcpy");
     }
-    free(object);
     v->size += 1;
     return result_get_valid_with_data(v);
 }
@@ -103,23 +102,23 @@ Result vector_extend_raw(Vector *v, void *object, size_t obj_count)
     {
         return result_get_invalid_reason("failed to memcpy");
     }
-    free(object);
     v->size += obj_count;
     return result_get_valid_with_data(v);
 }
 
 Result vector_pop(Vector *v, void *object)
 {
-    void *poped_loc = malloc(v->obj_size);
+    void *poped_loc = (void *)malloc(v->obj_size);
     if (!poped_loc)
     {
         return result_get_invalid_reason("could not malloc");
     }
-    void *moved = memmove(poped_loc, v->data + v->size * v->obj_size, v->obj_size);
+    void *moved = memcpy(poped_loc, v->data + v->size * v->obj_size, v->obj_size);
     if (!moved)
     {
         return result_get_invalid_reason("could not memmove");
     }
+    free(v->data + v->size * v->obj_size);
     v->size -= 1;
     vector_resize(v, v->size);
 
