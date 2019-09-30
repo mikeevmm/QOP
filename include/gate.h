@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include "option.h"
+#include <option.h>
 
 typedef enum GateId
 {
@@ -24,7 +24,7 @@ typedef enum GateId
 } GateId;
 
 // Constant sizes for use with malloc
-static const size_t GATE_SINGLE_QUBIT_SIZE = 4 * sizeof(double _Complex *);
+static const size_t GATE_SINGLE_QUBIT_SIZE = 4 * sizeof(double _Complex);
 
 // Explicit static gate declarations
 static double _Complex gate_static_i[2][2] = {{1., 0.},

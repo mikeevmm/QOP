@@ -1,4 +1,4 @@
-#include "option.h"
+#include <option.h>
 
 Result result_get_empty_valid()
 {
@@ -30,8 +30,8 @@ void *result_unwrap(Result result)
 {
     if (!result.valid)
     {
-        printf("%s at %s:%d", result.reason, result.file, result.line);
-        abort();
+        printf("%s at %s:%d\n", result.reason, result.file, result.line);
+        exit(1);
     }
 
     return result.data;

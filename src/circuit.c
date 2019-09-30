@@ -1,4 +1,4 @@
-#include "circuit.h"
+#include <circuit.h>
 
 unsigned int soft_gate_flat_position(Circuit *circuit, SoftGate *soft_gate)
 {
@@ -7,7 +7,7 @@ unsigned int soft_gate_flat_position(Circuit *circuit, SoftGate *soft_gate)
 
 Filter circuit_filter_slice_soft_gates(Circuit *circuit, unsigned int slice)
 {
-    Iter slice_iter = iter_create(slice * circuit->depth[0],
+    Iter slice_iter = iter_create((void *)(circuit->hardened_gates + slice * circuit->depth[0]),
                                   sizeof(SoftGate *),
                                   circuit->depth[1]);
     Filter slice_filter = filter_create(slice_iter, filter_generic_not_null);
@@ -98,6 +98,9 @@ Result circuit_compact(Circuit *circuit)
         return result_get_invalid_reason("circuit pointer is null");
     }
 
+    unsigned int slice_gate_count[circuit->depth[1]];
+    memset(slice_gate_count, 0, sizeof(slice_gate_count));
+
     unsigned int leftmost[circuit->depth[0]];
     memset(leftmost, 0, sizeof(leftmost));
 
@@ -131,6 +134,7 @@ Result circuit_compact(Circuit *circuit)
             }
 
             soft_gate->position.slice = new_position;
+            slice_gate_count[new_position] += 1;
         }
     }
 
@@ -142,6 +146,11 @@ Result circuit_compact(Circuit *circuit)
                 max = leftmost[i];
         }
         circuit->depth[1] = max;
+    }
+
+    {
+        vector_clean(&circuit->slice_gate_count);
+        vector_extend(&circuit->slice_gate_count, &leftmost, circuit->depth[1]);
     }
 
     if (circuit->hardened_gates != NULL)
@@ -167,7 +176,7 @@ Result circuit_compact(Circuit *circuit)
             SoftGate *soft_gate = (SoftGate *)next.data;
             unsigned int flat_position = soft_gate_flat_position(circuit, soft_gate);
             SoftGate **ptr_pos = circuit->hardened_gates + flat_position * sizeof(SoftGate *);
-            if (ptr_pos != NULL)
+            if (ptr_pos != 0)
             {
                 free(circuit->hardened_gates);
                 return result_get_invalid_reason("soft gates memory position collision");
@@ -193,13 +202,23 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[])
 
     for (unsigned int slice = 0; slice < circuit->depth[1]; ++slice)
     {
-        Filter slice_gates = circuit_filter_slice_soft_gates(circuit, slice);
+        const unsigned int qubits = (circuit->depth[0]);
+        const unsigned int gates_len = *(unsigned int *)(vector_get_raw(&circuit->slice_gate_count, slice).data);
+
+        Vector slice_gates;
+        vector_create(&slice_gates, sizeof(SoftGate *), gates_len);
+        {
+            Filter slice_gates_filter = circuit_filter_slice_soft_gates(circuit, slice);
+            Result fiv_r = filter_into_vector(&slice_gates_filter, &slice_gates);
+            if (!fiv_r.valid)
+            {
+                return fiv_r;
+            }
+        }
 
         double _Complex output[1 << (circuit->depth[0])];
         memset(&output, 0, sizeof(output));
 
-        const unsigned int qubits = (circuit->depth[0]);
-        const unsigned int gates_len = (circuit->soft_gates.size);
         unsigned int x, y, k, z;
         unsigned int mask, proj, cmask, ncmask, relevant, out_index;
         double _Complex coef;
@@ -212,7 +231,7 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[])
         relevant = 0;
         for (unsigned int j = 0; j < gates_len; ++j)
         {
-            SoftGate sgj = *(SoftGate *)result_unwrap(vector_get_raw(&circuit->soft_gates, j));
+            SoftGate sgj = *(SoftGate *)vector_get_raw(&slice_gates, j).data;
             mask |= 1 << (sgj.position.qubit);
             if ((cmask ^ mask) != 0)
             {
@@ -240,7 +259,7 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[])
 
                 for (unsigned int j = 0; j < gates_len; ++j)
                 {
-                    SoftGate sgj = *(SoftGate *)result_unwrap(vector_get_raw(&circuit->soft_gates, j));
+                    SoftGate sgj = *(SoftGate *)vector_get_raw(&slice_gates, j).data;
                     proj |= (y >> j) << sgj.position.qubit;
                     cset = sgj.control.some && (((x >> sgj.control.data) & 1) == 1);
                     if (((x >> sgj.position.qubit) & 1) == 1)
@@ -289,6 +308,8 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[])
                 }
             }
         }
+
+        vector_clean(&slice_gates);
 
         void *copy = memcpy(inout, output, sizeof(output));
         if (copy == NULL)

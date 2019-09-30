@@ -1,4 +1,4 @@
-#include "gate.h"
+#include <gate.h>
 
 Gate gate_new_from_matrix(double _Complex matrix[2][2], ReparamFnPtr reparamFn)
 {

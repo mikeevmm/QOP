@@ -1,4 +1,4 @@
-#include "vector.h"
+#include <vector.h>
 
 Result vector_create(Vector *v, size_t object_size, size_t init_capacity)
 {
@@ -132,9 +132,16 @@ Result vector_pop(Vector *v, void *object)
     return result_get_valid_with_data(v);
 }
 
-void vector_free(Vector *v)
+Result vector_clean(Vector *v)
 {
     free(v->data);
+    v->capacity = 0;
+    v->size = 0;
+}
+
+void vector_free(Vector *v)
+{
+    vector_clean(v);
 }
 
 Iter vector_iter_create(Vector *v)
@@ -145,4 +152,25 @@ Iter vector_iter_create(Vector *v)
     new_iter.stride = v->obj_size;
     new_iter.position = 0;
     return new_iter;
+}
+
+Result filter_into_vector(Filter *filter, Vector *vector)
+{
+    if (filter == NULL || vector == NULL)
+    {
+        return result_get_invalid_reason("filter and/or vector are NULL");
+    }
+
+    Option next;
+    while (FILTER_NEXT(next, filter))
+    {
+        Result push_r = vector_push(vector, next.data);
+        if (!push_r.valid)
+        {
+            vector_clean(vector);
+            return push_r;
+        }
+    }
+
+    return result_get_valid_with_data(vector);
 }
