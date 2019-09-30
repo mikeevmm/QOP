@@ -16,11 +16,13 @@ Result result_get_valid_with_data(void *data)
     return data_valid;
 }
 
-Result result_get_invalid_reason(const char *reason)
+Result result_get_invalid_reason_raw(const char *reason, const char *file, unsigned int line)
 {
     Result invalid;
     invalid.valid = false;
     invalid.reason = reason;
+    invalid.file = file;
+    invalid.line = line;
     return invalid;
 }
 
@@ -28,7 +30,7 @@ void *result_unwrap(Result result)
 {
     if (!result.valid)
     {
-        puts(result.reason);
+        printf("%s at %s:%d", result.reason, result.file, result.line);
         abort();
     }
 

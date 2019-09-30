@@ -7,12 +7,15 @@ typedef struct Result
 {
     bool valid;
     const char *reason;
+    const char *file;
+    unsigned int line;
     void *data;
 } Result;
 
 Result result_get_empty_valid();
 Result result_get_valid_with_data(void *data);
-Result result_get_invalid_reason(const char *reason);
+Result result_get_invalid_reason_raw(const char *reason, const char *file, unsigned int line);
+#define result_get_invalid_reason(reason) result_get_invalid_reason_raw(reason, __FILE__, __LINE__)
 void *result_unwrap(Result result);
 
 typedef struct Option
