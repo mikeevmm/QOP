@@ -1,19 +1,25 @@
-OBJS	= main.o gate.o util.o option.o circuit.o vector.o iter.o
-SOURCE	= main.c gate.c util.c option.c circuit.c vector.c iter.c
-HEADER	= main.h gate.h util.h option.h circuit.h vector.h iter.h
-OUT	= main.out
-CC	 = gcc
-FLAGS	 = -g -O1 -c -Wall -Wextra -Wconversion -pedantic
-LFLAGS	 = -lm -lblas -llapack -llapacke
+EXE	= main.out
 
-all: $(OBJS)
-	$(CC) -g $(OBJS) -o $(OUT) $(LFLAGS)
+SRC_DIR = src
+OBJ_DIR = obj
+
+SRC = $(wildcard $(SRC_DIR)/*.c)
+OBJ = $(SRC:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
+
+CPPFLAGS += -Iinclude
+CFLAGS += -g -O1 -Wall -Wextra -Wconversion -pedantic
+LDFLAGS += -Llib
+LDLIBS += -lm -lblas -llapack -llapacke
+
+all: $(EXE)
+
+$(EXE): $(OBJ)
+	$(CC) $(LDFLAGS) $^ $(LDLIBS) -o $@
+
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJS) $(OUT)
+	$(RM) $(OBJ)
 
-run: $(OUT)
-	./$(OUT)
-
-debug: $(OUT)
-	gdb ./$(OUT)
+.PHONY: all clean

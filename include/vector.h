@@ -11,7 +11,7 @@ typedef struct Vector
     size_t obj_size;
 } Vector;
 
-Result vector_init(Vector *v, size_t object_size, size_t init_capacity);
+Result vector_create(Vector *v, size_t object_size, size_t init_capacity);
 Result vector_get_raw(Vector *v, size_t index);
 Result vector_resize(Vector *v, size_t size);
 Result vector_push(Vector *v, void *object);
@@ -19,6 +19,6 @@ Result vector_raw_push(Vector *v, void *object);
 Result vector_extend(Vector *v, void *object, size_t obj_count);
 Result vector_extend_raw(Vector *v, void *object, size_t obj_count);
 Result vector_pop(Vector *v, void *object);
-Result vector_free(Vector *v);
+void vector_free(Vector *v);
 
 Iter vector_iter_create(Vector *v);

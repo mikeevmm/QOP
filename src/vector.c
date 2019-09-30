@@ -1,10 +1,17 @@
 #include "vector.h"
 
-Result vector_init(Vector *v, size_t object_size, size_t init_capacity)
+Result vector_create(Vector *v, size_t object_size, size_t init_capacity)
 {
-    v->data = (void *)malloc(init_capacity * object_size);
-    if (!v->data)
-        return result_get_invalid_reason("could not malloc");
+    if (init_capacity > 0)
+    {
+        v->data = (void *)malloc(init_capacity * object_size);
+        if (!v->data)
+            return result_get_invalid_reason("could not malloc");
+    }
+    else
+    {
+        v->data = NULL;
+    }
 
     v->size = 0;
     v->capacity = init_capacity;
@@ -28,7 +35,7 @@ Result vector_resize(Vector *v, size_t size)
     else if (size > v->capacity)
     {
         // Resize to next power of 2
-        size_t new_capacity = v->capacity;
+        size_t new_capacity = (v->capacity == 0 ? 1 : v->capacity);
         while (new_capacity < size)
             new_capacity <<= 1;
 
@@ -43,7 +50,7 @@ Result vector_resize(Vector *v, size_t size)
     }
     else if (size <= v->capacity / 2)
     {
-        size_t new_capacity = v->capacity;
+        size_t new_capacity = (v->capacity == 0 ? 1 : v->capacity);
         while (new_capacity / 2 > size)
             new_capacity >>= 1;
 
@@ -125,7 +132,7 @@ Result vector_pop(Vector *v, void *object)
     return result_get_valid_with_data(v);
 }
 
-Result vector_free(Vector *v)
+void vector_free(Vector *v)
 {
     free(v->data);
 }

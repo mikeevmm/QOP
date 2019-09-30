@@ -14,7 +14,6 @@ Result gate_new_from_identifier(enum GateId identifier, double params[])
 {
     Result result;
     result.valid = true;
-    result.reason = "unspecified reason";
 
     // Gate object to return pointer to (wrapped in Result)
     Gate *result_gate_ptr = (Gate *)malloc(sizeof(Gate));
@@ -78,8 +77,7 @@ Result gate_new_from_identifier(enum GateId identifier, double params[])
     {
         if (params == NULL)
         {
-            result.valid = false;
-            result.reason = "required theta parameter was not specified for GateRx instantiation";
+            result = result_get_invalid_reason("required theta parameter was not specified for GateRx instantiation");
         }
         break;
     }
@@ -93,8 +91,7 @@ Result gate_new_from_identifier(enum GateId identifier, double params[])
     {
         if (params == NULL)
         {
-            result.valid = false;
-            result.reason = "required theta parameter was not specified for GateRy instantiation";
+            result = result_get_invalid_reason("required theta parameter was not specified for GateRy instantiation");
         }
         break;
         double theta = params[0];
@@ -108,8 +105,7 @@ Result gate_new_from_identifier(enum GateId identifier, double params[])
     {
         if (params == NULL)
         {
-            result.valid = false;
-            result.reason = "required theta parameter was not specified for GateRz instantiation";
+            result = result_get_invalid_reason("required theta parameter was not specified for GateRz instantiation");
         }
         break;
         double theta = params[0];
@@ -120,8 +116,7 @@ Result gate_new_from_identifier(enum GateId identifier, double params[])
         break;
     }
     default:
-        result.valid = false;
-        result.reason = "unknown GateId specification";
+        result = result_get_invalid_reason("unknown GateId specification");
         break;
     }
 
@@ -134,10 +129,9 @@ Result gate_new_from_identifier(enum GateId identifier, double params[])
 
     // Pack everything into heap allocated struct
     {
-        Gate result_gate = *result_gate_ptr;
-        result_gate.id = identifier;
-        memcpy(result_gate.matrix, matrix, GATE_SINGLE_QUBIT_SIZE);
-        result_gate.reparamFn = reparam_fn;
+        result_gate_ptr->id = identifier;
+        memcpy(result_gate_ptr->matrix, matrix, GATE_SINGLE_QUBIT_SIZE);
+        result_gate_ptr->reparamFn = reparam_fn;
     }
 
     // Return as result
