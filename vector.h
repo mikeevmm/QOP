@@ -1,9 +1,7 @@
 #pragma once
-#include "option.h"
+#include "iter.h"
 #include <stdlib.h>
 #include <string.h>
-
-#define ITER_NEXT(NEXT, ITER) (NEXT = vector_iter_next(&ITER)).some
 
 typedef struct Vector
 {
@@ -12,12 +10,6 @@ typedef struct Vector
     size_t size;
     size_t obj_size;
 } Vector;
-
-typedef struct Vector_Iter
-{
-    Vector *vector;
-    size_t position;
-} Vector_Iter;
 
 Result vector_init(Vector *v, size_t object_size, size_t init_capacity);
 Result vector_get_raw(Vector *v, size_t index);
@@ -29,5 +21,4 @@ Result vector_extend_raw(Vector *v, void *object, size_t obj_count);
 Result vector_pop(Vector *v, void *object);
 Result vector_free(Vector *v);
 
-Vector_Iter vector_iter_create(Vector *v);
-Option vector_iter_next(Vector_Iter *vi);
+Iter vector_iter_create(Vector *v);

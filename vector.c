@@ -130,24 +130,12 @@ Result vector_free(Vector *v)
     free(v->data);
 }
 
-Vector_Iter vector_iter_create(Vector *v)
+Iter vector_iter_create(Vector *v)
 {
-    Vector_Iter new_iter;
+    Iter new_iter;
+    new_iter.head = v->data;
+    new_iter.length = v->size;
+    new_iter.stride = v->obj_size;
     new_iter.position = 0;
-    new_iter.vector = v;
     return new_iter;
-}
-
-Option vector_iter_next(Vector_Iter *vi)
-{
-    if (vi->position < vi->vector->size)
-    {
-        void *object = vi->vector->data + vi->vector->obj_size * vi->position;
-        vi->position += 1;
-        return option_some_with_data(object);
-    }
-    else
-    {
-        return option_none();
-    }
 }
