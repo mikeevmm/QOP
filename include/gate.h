@@ -6,6 +6,8 @@
 #include <math.h>
 #include <option.h>
 
+#define PRINT_GATE_MATRIX(GATE) printf("[[%e+i*%e, %e+i*%e],\n [%e+i*%e, %e+i*%e]]\n",creal(GATE.gate.matrix[0][0]),cimag(GATE.gate.matrix[0][0]),creal(GATE.gate.matrix[0][1]),cimag(GATE.gate.matrix[0][1]),creal(GATE.gate.matrix[1][0]),cimag(GATE.gate.matrix[1][0]),creal(GATE.gate.matrix[0][1]),cimag(GATE.gate.matrix[0][1]));
+
 typedef enum GateId
 {
     GateNoId,

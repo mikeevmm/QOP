@@ -18,10 +18,12 @@ int main()
     inout[0] = (double _Complex)1;
 
     result_unwrap(circuit_run(circuit, &inout));
-    for (int i = 0; i < 1 << 2; i++)
+
+    for (int i = 0; i < (1<<2); i++)
     {
         printf("%e+i*%e, ", CPARTS(inout[i]));
     }
+    printf("\n");
 
     circuit_free(circuit);
     gate_free(x);
