@@ -111,7 +111,7 @@ Result gate_new_from_identifier(enum GateId identifier, double params[]) {
   }
 
   // Return as result
-  result.data = result_gate_ptr;
+  result.content.data = result_gate_ptr;
   return result;
 }
 

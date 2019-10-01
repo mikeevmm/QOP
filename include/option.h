@@ -1,14 +1,31 @@
+/**
+ * Declaration of the `Option` and `Result` abstractions.
+ * These patterns are meant to emulate the Rust `Some`, `None` and
+ * `Option<>` patterns, with the added benefit that they allow for
+ * elegant error handling, since the user can always decide whether
+ * to return an invalid `Result` upstream, or `result_unwrap`, resulting
+ * in a signalling exit that can be debugged via the `Result`'s
+ * properties. (This `unwrap`/return `Result` pattern is also borrowed
+ * from Rust).
+ **/
 #pragma once
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-typedef struct Result {
-  bool valid;
+typedef struct ErrorDetails
+{
   const char *reason;
   const char *file;
   unsigned int line;
-  void *data;
+} ErrorDetails;
+
+typedef struct Result {
+  bool valid;
+  union ResultContent {
+    void *data;
+    ErrorDetails error_details;
+  } content;
 } Result;
 
 Result result_get_empty_valid();

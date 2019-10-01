@@ -3,14 +3,14 @@
 Result result_get_empty_valid() {
   Result empty_valid;
   empty_valid.valid = true;
-  empty_valid.data = NULL;
+  empty_valid.content.data = NULL;
   return empty_valid;
 }
 
 Result result_get_valid_with_data(void *data) {
   Result data_valid;
   data_valid.valid = true;
-  data_valid.data = data;
+  data_valid.content.data = data;
   return data_valid;
 }
 
@@ -18,19 +18,20 @@ Result result_get_invalid_reason_raw(const char *reason, const char *file,
                                      unsigned int line) {
   Result invalid;
   invalid.valid = false;
-  invalid.reason = reason;
-  invalid.file = file;
-  invalid.line = line;
+  invalid.content.error_details.reason = reason;
+  invalid.content.error_details.file = file;
+  invalid.content.error_details.line = line;
   return invalid;
 }
 
 void *result_unwrap(Result result) {
   if (!result.valid) {
-    printf("%s at %s:%d\n", result.reason, result.file, result.line);
+    ErrorDetails err_det = result.content.error_details;
+    printf("%s at %s:%d\n", err_det.reason, err_det.file, err_det.line);
     exit(1);
   }
 
-  return result.data;
+  return result.content.data;
 }
 
 Option option_none() {

@@ -190,8 +190,9 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
   vector_create(&slice_gates, sizeof(SoftGate *), 0);
 
   for (unsigned int slice = 0; slice < circuit->depth[1]; ++slice) {
-    unsigned int gates_len = *(
-        unsigned int *)(vector_get_raw(&circuit->slice_gate_count, slice).data);
+    unsigned int gates_len =
+        *(unsigned int *)(vector_get_raw(&circuit->slice_gate_count, slice)
+                              .content.data);
 
     {
       unsigned long int head_offset =
@@ -221,7 +222,7 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
           vector_free(&slice_gates);
           return raw_get_r;
         }
-        SoftGate sg = **((SoftGate **)raw_get_r.data);
+        SoftGate sg = **((SoftGate **)raw_get_r.content.data);
         gate_i_qubit = sg.position.qubit;
         gate_i_control = sg.control;
       }
@@ -251,7 +252,7 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
               vector_free(&slice_gates);
               return gate_j_r;
             }
-            gate_j = **(SoftGate **)gate_j_r.data;
+            gate_j = **(SoftGate **)gate_j_r.content.data;
           }
           proj |= (y >> j) << gate_j.position.qubit;
           cset = (!gate_j.control.some) || ((x >> gate_j.control.data) & 1U);
