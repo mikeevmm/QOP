@@ -1,45 +1,42 @@
 #pragma once
 #include <stdbool.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 
-typedef struct Result
-{
-    bool valid;
-    const char *reason;
-    const char *file;
-    unsigned int line;
-    void *data;
+typedef struct Result {
+  bool valid;
+  const char *reason;
+  const char *file;
+  unsigned int line;
+  void *data;
 } Result;
 
 Result result_get_empty_valid();
 Result result_get_valid_with_data(void *data);
-Result result_get_invalid_reason_raw(const char *reason, const char *file, unsigned int line);
-#define result_get_invalid_reason(reason) result_get_invalid_reason_raw(reason, __FILE__, __LINE__)
+Result result_get_invalid_reason_raw(const char *reason, const char *file,
+                                     unsigned int line);
+#define result_get_invalid_reason(reason) \
+  result_get_invalid_reason_raw(reason, __FILE__, __LINE__)
 void *result_unwrap(Result result);
 
-typedef struct Option
-{
-    bool some;
-    void *data;
+typedef struct Option {
+  bool some;
+  void *data;
 } Option;
 
-typedef struct Option_Uint
-{
-    bool some;
-    unsigned int data;
+typedef struct Option_Uint {
+  bool some;
+  unsigned int data;
 } Option_Uint;
 
-typedef struct Option_Int
-{
-    bool some;
-    int data;
+typedef struct Option_Int {
+  bool some;
+  int data;
 } Option_Int;
 
-typedef struct Option_Double
-{
-    bool some;
-    double data;
+typedef struct Option_Double {
+  bool some;
+  double data;
 } Option_Double;
 
 Option option_none();

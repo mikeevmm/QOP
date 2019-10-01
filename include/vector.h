@@ -1,16 +1,15 @@
 #pragma once
 #include <iter.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
 
-typedef struct Vector
-{
-    bool init;
-    void *data;
-    size_t capacity;
-    size_t size;
-    size_t obj_size;
+typedef struct Vector {
+  bool init;
+  void *data;
+  size_t capacity;
+  size_t size;
+  size_t obj_size;
 } Vector;
 
 Result vector_create(Vector *v, size_t object_size, size_t init_capacity);
