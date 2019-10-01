@@ -1,4 +1,4 @@
-#include <circuit.h>
+#include "include/circuit.h"
 
 unsigned int soft_gate_flat_position(Circuit *circuit, SoftGate *soft_gate) {
   return soft_gate->position.qubit +

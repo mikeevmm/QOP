@@ -1,8 +1,8 @@
 #pragma once
-#include <gate.h>
-#include <iter.h>
-#include <option.h>
-#include <vector.h>
+#include "include/gate.h"
+#include "include/iter.h"
+#include "include/option.h"
+#include "include/vector.h"
 
 typedef struct GatePosition {
   unsigned int slice;

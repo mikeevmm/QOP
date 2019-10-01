@@ -1,10 +1,10 @@
 #pragma once
 #include <complex.h>
 #include <math.h>
-#include <option.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include "include/option.h"
 
 #define PRINT_GATE_MATRIX(GATE)                                        \
   printf("[[%e+i*%e, %e+i*%e],\n [%e+i*%e, %e+i*%e]]\n",               \
