@@ -10,7 +10,7 @@ Filter circuit_filter_slice_soft_gates(Circuit *circuit, unsigned int slice)
     Iter slice_iter = iter_create((void *)(circuit->hardened_gates + slice * circuit->depth[0]),
                                   sizeof(SoftGate *),
                                   circuit->depth[1]);
-    Filter slice_filter = filter_create(slice_iter, filter_generic_not_null);
+    Filter slice_filter = filter_create(slice_iter, &filter_generic_not_null);
     return slice_filter;
 }
 
@@ -54,7 +54,7 @@ Result circuit_create(unsigned int qubit_count)
     return result_get_valid_with_data(new_circuit);
 }
 
-Result circuit_add_gate(Circuit *circuit, Gate gate, unsigned int qubit, Option_Uint control)
+Result circuit_add_gate(Circuit *circuit, Gate *gate, unsigned int qubit, Option_Uint control)
 {
     if (circuit == NULL)
     {
@@ -78,7 +78,7 @@ Result circuit_add_gate(Circuit *circuit, Gate gate, unsigned int qubit, Option_
     circuit->depth[1] += 1;
 
     SoftGate new_soft_gate;
-    new_soft_gate.gate = gate;
+    new_soft_gate.gate = *gate;
     new_soft_gate.control = control;
     new_soft_gate.position = gate_position;
 
@@ -107,7 +107,7 @@ Result circuit_compact(Circuit *circuit)
     {
         Iter soft_gates_iter = vector_iter_create(&circuit->soft_gates);
         Option next;
-        while (ITER_NEXT(next, soft_gates_iter))
+        while (ITER_NEXT(next, &soft_gates_iter))
         {
             SoftGate *soft_gate = (SoftGate *)next.data;
             unsigned int new_position = 0;
@@ -149,8 +149,18 @@ Result circuit_compact(Circuit *circuit)
     }
 
     {
-        vector_clean(&circuit->slice_gate_count);
-        vector_extend(&circuit->slice_gate_count, &leftmost, circuit->depth[1]);
+        Result result;
+        result = vector_clean(&circuit->slice_gate_count);
+        if (!result.valid)
+        {
+            return result;
+        }
+
+        result = vector_extend(&circuit->slice_gate_count, slice_gate_count, circuit->depth[1]);
+        if (!result.valid)
+        {
+            return result;
+        }
     }
 
     if (circuit->hardened_gates != NULL)
@@ -159,24 +169,25 @@ Result circuit_compact(Circuit *circuit)
     }
 
     {
-        void *new_malloc = malloc(circuit->depth[0] * circuit->depth[1] * sizeof(SoftGate *));
+        size_t malloc_size = circuit->depth[0] * circuit->depth[1] * sizeof(SoftGate *);
+        void *new_malloc = malloc(malloc_size);
         if (new_malloc == NULL)
         {
             return result_get_invalid_reason("could not malloc");
         }
-        memset(new_malloc, 0, sizeof(new_malloc));
+        memset(new_malloc, 0, malloc_size);
         circuit->hardened_gates = (SoftGate **)new_malloc;
     }
 
     {
         Iter gates_iter = vector_iter_create(&circuit->soft_gates);
         Option next;
-        while (ITER_NEXT(next, gates_iter))
+        while (ITER_NEXT(next, &gates_iter))
         {
             SoftGate *soft_gate = (SoftGate *)next.data;
             unsigned int flat_position = soft_gate_flat_position(circuit, soft_gate);
-            SoftGate **ptr_pos = circuit->hardened_gates + flat_position * sizeof(SoftGate *);
-            if (ptr_pos != 0)
+            SoftGate **ptr_pos = circuit->hardened_gates + flat_position;
+            if (*ptr_pos != NULL)
             {
                 free(circuit->hardened_gates);
                 return result_get_invalid_reason("soft gates memory position collision");
@@ -202,114 +213,45 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[])
 
     for (unsigned int slice = 0; slice < circuit->depth[1]; ++slice)
     {
-        const unsigned int qubits = (circuit->depth[0]);
-        const unsigned int gates_len = *(unsigned int *)(vector_get_raw(&circuit->slice_gate_count, slice).data);
+        unsigned int qubits = (circuit->depth[0]);
+        unsigned int gates_len = *(unsigned int *)(vector_get_raw(&circuit->slice_gate_count, slice).data);
 
         Vector slice_gates;
-        vector_create(&slice_gates, sizeof(SoftGate *), gates_len);
         {
-            Filter slice_gates_filter = circuit_filter_slice_soft_gates(circuit, slice);
-            Result fiv_r = filter_into_vector(&slice_gates_filter, &slice_gates);
-            if (!fiv_r.valid)
+            Result result = vector_create(&slice_gates, sizeof(SoftGate *), gates_len);
+            if (!result.valid)
             {
-                return fiv_r;
+                return result;
+            }
+        }
+
+        {
+            unsigned long int head_offset = slice * circuit->depth[0];
+            Iter slice_gates_iter = iter_create((void *)((char *)circuit->hardened_gates + head_offset),
+                                                sizeof(SoftGate *),
+                                                circuit->depth[0]);
+            Filter slice_gates_filter = filter_create(slice_gates_iter, &filter_generic_not_zero);
+            Option next;
+            while (FILTER_NEXT(next, &slice_gates_iter))
+            {
+                SoftGate *sg_ptr = (SoftGate *)next.data;
             }
         }
 
         double _Complex output[1 << (circuit->depth[0])];
         memset(&output, 0, sizeof(output));
 
-        unsigned int x, y, k, z;
-        unsigned int mask, proj, cmask, ncmask, relevant, out_index;
-        double _Complex coef;
-        bool cset;
-
-        k = 1 << (qubits - 1);
-
-        mask = 0;
-        cmask = 0;
-        relevant = 0;
-        for (unsigned int j = 0; j < gates_len; ++j)
         {
-            SoftGate sgj = *(SoftGate *)vector_get_raw(&slice_gates, j).data;
-            mask |= 1 << (sgj.position.qubit);
-            if ((cmask ^ mask) != 0)
+            Option next;
+            Iter slice_gates_iter = vector_iter_create(&slice_gates);
+            while (ITER_NEXT(next, &slice_gates_iter))
             {
-                relevant += 1;
-            }
-            cmask |= mask;
-            if (sgj.control.some)
-            {
-                if ((cmask & (1 << sgj.control.data)) == 0)
-                {
-                    relevant += 1;
-                }
-                cmask |= 1 << sgj.control.data;
-            }
-        }
-        ncmask = (~cmask) & (k | (k - 1));
-
-        x = 0;
-        for (unsigned int u = 0; u < (1 << relevant); ++u)
-        {
-            for (unsigned int y = 0; y < (1 << gates_len); ++y)
-            {
-                coef = (double _Complex)1;
-                proj = 0;
-
-                for (unsigned int j = 0; j < gates_len; ++j)
-                {
-                    SoftGate sgj = *(SoftGate *)vector_get_raw(&slice_gates, j).data;
-                    proj |= (y >> j) << sgj.position.qubit;
-                    cset = sgj.control.some && (((x >> sgj.control.data) & 1) == 1);
-                    if (((x >> sgj.position.qubit) & 1) == 1)
-                    {
-                        if (cset)
-                        {
-                            coef *= sgj.gate.matrix[1][(y >> j) & 1];
-                        }
-                        else
-                        {
-                            coef *= (y >> j) & 1;
-                        }
-                    }
-                    else
-                    {
-                        if (cset)
-                        {
-                            coef *= sgj.gate.matrix[0][(y >> j) & 1];
-                        }
-                        else
-                        {
-                            coef *= ((y >> j) & 1) ^ 1;
-                        }
-                    }
-                }
-
-                z = 0;
-                for (unsigned int j = 0; j < (1 << (qubits - relevant)); ++j)
-                {
-                    out_index = (proj & mask) | ((z | x) & (~mask));
-                    output[out_index] += coef * (*inout)[z | x];
-
-                    z += 1;
-                    while ((z & ncmask) != z)
-                    {
-                        unsigned int p = ~((z & -z) | ((z & -z) - 1));
-                        z = (z & p) + ((ncmask & p) & (-(ncmask & p)));
-                    }
-                }
-
-                x += 1;
-                while ((x & cmask) != x)
-                {
-                    unsigned int p = ~((x & -x) | ((x & -x) - 1));
-                    x = x & p + ((cmask & p) & (-(cmask & p)));
-                }
+                SoftGate *sg = (SoftGate *)next.data;
+                printf("%u,%u\n", sg->position.slice, sg->position.slice);
             }
         }
 
-        vector_clean(&slice_gates);
+        result_unwrap(vector_clean(&slice_gates));
 
         void *copy = memcpy(inout, output, sizeof(output));
         if (copy == NULL)

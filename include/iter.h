@@ -3,8 +3,8 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
-#define ITER_NEXT(NEXT, ITER) (NEXT = iter_next(&ITER)).some
-#define FILTER_NEXT(NEXT, FILTER) (NEXT = filter_next(&FILTER)).some
+#define ITER_NEXT(NEXT, ITER) (NEXT = iter_next(ITER)).some
+#define FILTER_NEXT(NEXT, FILTER) (NEXT = filter_next(FILTER)).some
 
 typedef struct Iter
 {
@@ -16,6 +16,7 @@ typedef struct Iter
 
 Iter iter_create(void *head, unsigned int stride, unsigned int length);
 Option iter_next(Iter *iter);
+Iter iter_get_empty();
 
 typedef bool (*FilterFn)(void *);
 typedef struct Filter
@@ -29,3 +30,4 @@ Filter filter_create(Iter iter, FilterFn filter_fn);
 Option filter_next(Filter *filter);
 
 bool filter_generic_not_null(void *ptr);
+bool filter_generic_not_zero(void *ptr);

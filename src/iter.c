@@ -3,8 +3,8 @@
 Iter iter_create(void *head, unsigned int stride, unsigned int length)
 {
     Iter new_iter;
-    new_iter.position = 0;
     new_iter.head = head;
+    new_iter.position = 0;
     new_iter.stride = stride;
     new_iter.length = length;
     return new_iter;
@@ -17,9 +17,19 @@ Option iter_next(Iter *iter)
         return option_none();
     }
 
-    void *next = iter->head + iter->stride * iter->position;
+    void *next = (char *)iter->head + iter->stride * iter->position;
     iter->position += 1;
     return option_some_with_data(next);
+}
+
+Iter iter_get_empty()
+{
+    Iter empty_iter;
+    empty_iter.head = NULL;
+    empty_iter.length = 0;
+    empty_iter.position = 0;
+    empty_iter.stride = 0;
+    return empty_iter;
 }
 
 Filter filter_create(Iter iter, FilterFn filter_fn)
@@ -34,7 +44,12 @@ Filter filter_create(Iter iter, FilterFn filter_fn)
 Option filter_next(Filter *filter)
 {
     Option next = iter_next(&filter->iter);
-    while (next.some && !filter->filter_fn(next.data))
+    if (!next.some)
+    {
+        return option_none();
+    }
+
+    while (next.some && !(*filter->filter_fn)(next.data))
     {
         next = iter_next(&filter->iter);
     }
@@ -45,4 +60,9 @@ Option filter_next(Filter *filter)
 bool filter_generic_not_null(void *ptr)
 {
     return ptr != NULL;
+}
+
+bool filter_generic_not_zero(void *ptr)
+{
+    return ptr != 0;
 }

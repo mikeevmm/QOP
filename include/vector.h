@@ -2,9 +2,11 @@
 #include <iter.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 typedef struct Vector
 {
+    bool init;
     void *data;
     size_t capacity;
     size_t size;
@@ -18,7 +20,7 @@ Result vector_push(Vector *v, void *object);
 Result vector_raw_push(Vector *v, void *object);
 Result vector_extend(Vector *v, void *object, size_t obj_count);
 Result vector_extend_raw(Vector *v, void *object, size_t obj_count);
-Result vector_pop(Vector *v, void *object);
+Result vector_pop(Vector *v);
 Result vector_clean(Vector *v);
 void vector_free(Vector *v);
 

@@ -65,3 +65,4 @@ void reparameterize_rz_gate(double _Complex matrix[2][2], double params[]);
 
 Gate gate_new_from_matrix(double _Complex matrix[2][2], ReparamFnPtr reparamFn);
 Result gate_new_from_identifier(GateId identifier, double params[]);
+void gate_free(Gate *gate);

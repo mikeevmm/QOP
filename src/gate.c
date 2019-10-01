@@ -24,11 +24,6 @@ Result gate_new_from_identifier(enum GateId identifier, double params[])
 
     // Determine correct matrix and reparam_fn (latter can be NULL)
     double _Complex matrix[2][2] = {{0, 0}, {0, 0}};
-    if (matrix == NULL)
-    {
-        free(result_gate_ptr);
-        return result_get_invalid_reason("could not alloca");
-    }
 
     ReparamFnPtr reparam_fn = NULL;
     switch (identifier)
@@ -161,4 +156,9 @@ void reparameterize_rz_gate(double _Complex matrix[2][2], double params[])
 {
     double theta = params[0];
     matrix[1][1] = cexp(theta * _Complex_I);
+}
+
+void gate_free(Gate *gate)
+{
+    free(gate);
 }
