@@ -69,7 +69,7 @@ Result circuit_add_gate(Circuit *circuit, Gate *gate, unsigned int qubit,
   circuit->depth[1] += 1;
 
   SoftGate new_soft_gate;
-  new_soft_gate.gate = *gate;
+  new_soft_gate.gate = gate;
   new_soft_gate.control = control;
   new_soft_gate.position = gate_position;
 
@@ -258,12 +258,12 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
 
           if ((x >> gate_j.position.qubit) & 1U) {
             if (cset)
-              coef *= gate_j.gate.matrix[1][(y >> j) & 1U];
+              coef *= gate_j.gate->matrix[1][(y >> j) & 1U];
             else
               coef *= (double _Complex)(((y >> j) & 1U));
           } else {
             if (cset)
-              coef *= gate_j.gate.matrix[0][(y >> j) & 1U];
+              coef *= gate_j.gate->matrix[0][(y >> j) & 1U];
             else
               coef *= (double _Complex)(1U ^ (1U & (y >> j)));
           }

@@ -62,7 +62,7 @@ Result gate_new_from_identifier(enum GateId identifier, double params[]) {
           {sin(theta / 2), -sin(theta / 2) * _Complex_I},
           {-sin(theta / 2) * _Complex_I, cos(theta / 2)}};
       memcpy(matrix, theta_matrix, GATE_SINGLE_QUBIT_SIZE);
-      reparam_fn = &reparameterize_rx_gate;
+      reparam_fn = &gate_reparameterize_rx;
       break;
     case GateRy: {
       if (params == NULL) {
@@ -75,7 +75,7 @@ Result gate_new_from_identifier(enum GateId identifier, double params[]) {
       double _Complex theta_matrix[2][2] = {{cos(theta / 2), -sin(theta / 2)},
                                             {sin(theta / 2), cos(theta / 2)}};
       memcpy(matrix, theta_matrix, GATE_SINGLE_QUBIT_SIZE);
-      reparam_fn = &reparameterize_ry_gate;
+      reparam_fn = &gate_reparameterize_ry;
       break;
     }
     case GateRz: {
@@ -89,7 +89,7 @@ Result gate_new_from_identifier(enum GateId identifier, double params[]) {
       double _Complex theta_matrix[2][2] = {{1.0, 0.0},
                                             {0.0, cexp(_Complex_I * theta)}};
       memcpy(matrix, theta_matrix, GATE_SINGLE_QUBIT_SIZE);
-      reparam_fn = &reparameterize_rz_gate;
+      reparam_fn = &gate_reparameterize_rz;
       break;
     }
     default:
