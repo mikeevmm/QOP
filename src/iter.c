@@ -48,21 +48,11 @@ Option filter_next(Filter *filter)
     {
         return option_none();
     }
-
-    while (next.some && !(*filter->filter_fn)(next.data))
+    
+    while (next.some && !((filter->filter_fn)(next.data)))
     {
         next = iter_next(&filter->iter);
     }
     filter->position += 1;
     return next;
-}
-
-bool filter_generic_not_null(void *ptr)
-{
-    return ptr != NULL;
-}
-
-bool filter_generic_not_zero(void *ptr)
-{
-    return ptr != 0;
 }

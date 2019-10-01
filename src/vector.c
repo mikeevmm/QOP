@@ -195,7 +195,7 @@ Result filter_into_vector(Filter *filter, Vector *vector)
     }
 
     Option next;
-    while (FILTER_NEXT(next, filter))
+    while ((next = filter_next(filter)).some)
     {
         Result push_r = vector_push(vector, next.data);
         if (!push_r.valid)

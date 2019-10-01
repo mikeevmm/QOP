@@ -25,7 +25,6 @@ typedef struct Circuit
     SoftGate **hardened_gates;
 } Circuit;
 
-unsigned int soft_gate_flat_position(Circuit *circuit, SoftGate *soft_gate);
 bool _circuit_filter_is_soft_gate(void *ptr);
 Filter circuit_filter_slice_soft_gates(Circuit *circuit, unsigned int slice);
 

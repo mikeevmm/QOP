@@ -3,9 +3,6 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
-#define ITER_NEXT(NEXT, ITER) (NEXT = iter_next(ITER)).some
-#define FILTER_NEXT(NEXT, FILTER) (NEXT = filter_next(FILTER)).some
-
 typedef struct Iter
 {
     void *head;
