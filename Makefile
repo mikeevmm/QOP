@@ -31,7 +31,7 @@ run:
 	./$(EXE)
 
 debug:
-	$(DBG) ./$(EXE)
+	$(DBG) -q ./$(EXE)
 
 check:
 	make all
