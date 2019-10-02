@@ -78,15 +78,18 @@ void gate_reparameterize_ry(double _Complex matrix[2][2], double params[]);
 void gate_reparameterize_rz(double _Complex matrix[2][2], double params[]);
 
 // Creates a new `Gate` object from a given matrix and reparameterization
-// function pointer.
+// function pointer, storing it in the heap, and returns a pointer.
 // Note that the `matrix` is copied into the `Gate` struct (which is
 // possible as it is of known fixed size), and so the original may be
 // safely freed or popped from stack.
 // The same is not true of the reparameterization function, as it is
 // passed by reference.
-Gate gate_new_from_matrix(double _Complex matrix[2][2], ReparamFnPtr reparamFn);
+// The Gate object itself is stored in the heap, and should be freed
+// with `gate_free` when appropriate!
+Result gate_new_from_matrix(double _Complex matrix[2][2], ReparamFnPtr reparamFn);
 
-// Creates a new gate from a `enum GateId` gate identifier.
+// Creates a new gate from a `enum GateId` gate identifier, storing it
+// in the heap, and returns a pointer.
 // Some gates (such as the rotation gates) expect parameters, to be
 // specified via `params`, but otherwise it is safe to pass `NULL` as
 // the `params` argument.

@@ -73,7 +73,7 @@ Result circuit_add_gate(Circuit* circuit, Gate* gate, unsigned int qubit,
 // gate is as leftmost as possible, while preserving order of addition
 // of gates. For example:
 //
-// --[]-------o---[]--             --[]-o--[]-
+// --[]-------o---[]--             --[]-o-[]--
 // ------[]---|-------   becomes   --[]-|-----
 // ----------[ ]------             ----[ ]----
 //

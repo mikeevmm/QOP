@@ -218,8 +218,7 @@ Result circuit_compact(Circuit *circuit) {
 // The simulation can be thought of as a reduction over the slices;
 //
 // ```ASCII
-//                            (when layers exhausted)
-//                           +----------------------->[Final output]
+//                           +-(when layers exhausted)->[Final output]
 //                           |
 //                     +-----+----+
 //                     |  Slice   |   <[as input to next slice]
@@ -427,6 +426,8 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
   return result_get_valid_with_data(inout);
 }
 
+// Frees all the heap memory allocated by the circuit, but not the
+// circuit itself.
 Result circuit_free(Circuit *circuit) {
   if (circuit == NULL) {
     return result_get_invalid_reason("circuit pointer is null");

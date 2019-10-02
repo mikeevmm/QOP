@@ -1,16 +1,29 @@
 #include "include/gate.h"
 
-Gate gate_new_from_matrix(double _Complex matrix[2][2],
-                          ReparamFnPtr reparamFn) {
+// Creates a new gate from a matrix array.
+// It is important that we `memcpy` the array, rather than assigning it,
+// because we want to make sure that reparameterization doesn't affect
+// other gates.
+Result gate_new_from_matrix(double _Complex matrix[2][2],
+                            ReparamFnPtr reparamFn) {
   Gate result;
   // result.matrix = matrix;
   memcpy(result.matrix, matrix, GATE_SINGLE_QUBIT_SIZE);
   result.reparamFn = reparamFn;
   result.id = GateCustom;
-  return result;
+
+  void *gate_ptr = malloc(sizeof(Gate));
+  if (gate_ptr == NULL) {
+    return result_get_invalid_reason("could not malloc");
+  }
+  memcpy(gate_ptr, &result, sizeof(Gate));
+
+  return result_get_valid_with_data(gate_ptr);
 }
 
-Result gate_new_from_identifier(enum GateId identifier, double params[]) {
+// Creates a gate using an identifier from the GateId enum
+// It's basically `gate_new_from_matrix` with a big switch statement.
+Result gate_new_from_identifier(GateId identifier, double params[]) {
   Result result;
   result.valid = true;
 
