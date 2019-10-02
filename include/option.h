@@ -28,14 +28,38 @@ typedef struct Result {
   } content;
 } Result;
 
+// Creates a new valid `Result` object pointing to nowhere (`data = NULL`).
+// This is useful for signalling, e.g., that a void function returned
+// normally.
 Result result_get_empty_valid();
+
+// Creates a new valid result pointing to the given pointer.
 Result result_get_valid_with_data(void *data);
+
+// Creates a new invalid `Result` object containing a reason for failure,
+// and the file and line number at which the error occurred.
+// It is discouraged to use this function directly. Consider instead
+// using the macro `result_get_invalid_reason`, which will specify the
+// file and line no. automatically using the predefined `__FILE__` and
+// `__LINE__` macros. 
 Result result_get_invalid_reason_raw(const char *reason, const char *file,
                                      unsigned int line);
+
+// Creates a new invalid `Result` object containing the given reason for
+// failure, and pointing to the file and line location at which the call
+// for this macro was made.
+// The `reason` string should be a constant literal.
+// This is the preferred way to create an invalid `Result` object.
 #define result_get_invalid_reason(reason) \
   result_get_invalid_reason_raw(reason, __FILE__, __LINE__)
+
+// Examines the given `Result` object, returning the `void *` pointer it
+// contains if it's valid, or, if it's invalid, reporting the reason and
+// location before exiting with a non-zero exit code. 
 void *result_unwrap(Result result);
 
+// Represents an optional `void *` pointer.
+// If `some` is `false`, then `*data` is unspecified (and likely garbage). 
 typedef struct Option {
   bool some;
   void *data;
@@ -56,10 +80,15 @@ typedef struct Option_Double {
   double data;
 } Option_Double;
 
+// Creates an `Option` without data.
+// This is akin to Rust's `None`.
 Option option_none();
 Option_Int option_none_int();
 Option_Uint option_none_uint();
 Option_Double option_none_double();
+
+// Create an `Option` pointing to the given `void *` pointer.
+// This is akin to Rust's `Some(data)`.
 Option option_some_with_data(void *data);
 Option_Int option_from_int(int data);
 Option_Uint option_from_uint(unsigned int data);

@@ -1,6 +1,6 @@
 #include "include/vector.h"
 
-Result vector_create(Vector *v, size_t object_size, size_t init_capacity) {
+Result vector_init(Vector *v, size_t object_size, size_t init_capacity) {
   if (init_capacity > 0) {
     v->data = (void *)malloc(init_capacity * object_size);
     if (!v->data) return result_get_invalid_reason("could not malloc");
@@ -16,9 +16,9 @@ Result vector_create(Vector *v, size_t object_size, size_t init_capacity) {
   return result_get_valid_with_data(v);
 }
 
-Result vector_get_raw(Vector *v, size_t index) {
+void *vector_get_raw(Vector *v, size_t index) {
   void *object = (void *)((char *)v->data + index * v->obj_size);
-  return result_get_valid_with_data(object);
+  return object;
 }
 
 Result vector_resize(Vector *v, size_t size) {
@@ -81,7 +81,7 @@ Result vector_raw_push(Vector *v, void *object) {
   return result_get_valid_with_data(v);
 }
 
-Result vector_extend(Vector *v, void *object, size_t obj_count) {
+Result vector_extend(Vector *v, void *head, size_t obj_count) {
   if (!v->init) {
     return result_get_invalid_reason("tried to extend uninitialized vector");
   }
@@ -92,11 +92,11 @@ Result vector_extend(Vector *v, void *object, size_t obj_count) {
       return resize;
     }
   }
-  return vector_extend_raw(v, object, obj_count);
+  return vector_extend_raw(v, head, obj_count);
 }
 
-Result vector_extend_raw(Vector *v, void *object, size_t obj_count) {
-  void *moved = memcpy((char *)v->data + v->obj_size * v->size, object,
+Result vector_extend_raw(Vector *v, void *head, size_t obj_count) {
+  void *moved = memcpy((char *)v->data + v->obj_size * v->size, head,
                        v->obj_size * obj_count);
   if (!moved) {
     return result_get_invalid_reason("failed to memcpy");
@@ -110,19 +110,19 @@ Result vector_pop(Vector *v) {
     return result_get_invalid_reason("tried to pop uninitialized vector");
   }
 
-  void *poped_loc = (void *)malloc(v->obj_size);
-  if (!poped_loc) {
+  void *popped_loc = (void *)malloc(v->obj_size);
+  if (!popped_loc) {
     return result_get_invalid_reason("could not malloc");
   }
   void *moved =
-      memcpy(poped_loc, (char *)v->data + v->size * v->obj_size, v->obj_size);
+      memcpy(popped_loc, (char *)v->data + v->size * v->obj_size, v->obj_size);
   if (!moved) {
     return result_get_invalid_reason("could not memmove");
   }
   v->size -= 1;
   vector_resize(v, v->size);
 
-  return result_get_valid_with_data(poped_loc);
+  return result_get_valid_with_data(popped_loc);
 }
 
 Result vector_clean(Vector *v) {

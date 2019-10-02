@@ -18,7 +18,7 @@ Result circuit_create(unsigned int qubit_count) {
   Vector soft_gates_vector;
   {
     Result vector_create_r =
-        vector_create(&soft_gates_vector, sizeof(SoftGate), qubit_count);
+        vector_init(&soft_gates_vector, sizeof(SoftGate), qubit_count);
     if (!vector_create_r.valid) {
       return vector_create_r;
     }
@@ -27,7 +27,7 @@ Result circuit_create(unsigned int qubit_count) {
   Vector slice_gate_vector;
   {
     Result vector_create_r =
-        vector_create(&slice_gate_vector, sizeof(unsigned int), 0);
+        vector_init(&slice_gate_vector, sizeof(unsigned int), 0);
     if (!vector_create_r.valid) {
       return vector_create_r;
     }
@@ -187,12 +187,11 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
   unsigned int qubits = (circuit->depth[0]);
   unsigned int leftmost = 1U << (qubits - 1U);
   Vector slice_gates;
-  vector_create(&slice_gates, sizeof(SoftGate *), 0);
+  vector_init(&slice_gates, sizeof(SoftGate *), 0);
 
   for (unsigned int slice = 0; slice < circuit->depth[1]; ++slice) {
     unsigned int gates_len =
-        *(unsigned int *)(vector_get_raw(&circuit->slice_gate_count, slice)
-                              .content.data);
+        *(unsigned int *)(vector_get_raw(&circuit->slice_gate_count, slice));
 
     {
       unsigned long int head_offset =
@@ -217,12 +216,7 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
       unsigned int gate_i_qubit;
       Option_Uint gate_i_control;
       {
-        Result raw_get_r = vector_get_raw(&slice_gates, i);
-        if (!raw_get_r.valid) {
-          vector_free(&slice_gates);
-          return raw_get_r;
-        }
-        SoftGate sg = **((SoftGate **)raw_get_r.content.data);
+        SoftGate sg = **((SoftGate **)vector_get_raw(&slice_gates, i));
         gate_i_qubit = sg.position.qubit;
         gate_i_control = sg.control;
       }
@@ -247,12 +241,7 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
           bool cset;
           SoftGate gate_j;
           {
-            Result gate_j_r = vector_get_raw(&slice_gates, j);
-            if (!gate_j_r.valid) {
-              vector_free(&slice_gates);
-              return gate_j_r;
-            }
-            gate_j = **(SoftGate **)gate_j_r.content.data;
+            gate_j = **(SoftGate **)(vector_get_raw(&slice_gates, j));
           }
           proj |= (y >> j) << gate_j.position.qubit;
           cset = (!gate_j.control.some) || ((x >> gate_j.control.data) & 1U);
