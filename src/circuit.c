@@ -130,7 +130,7 @@ Result circuit_compact(Circuit *circuit) {
       SoftGate *soft_gate = (SoftGate *)next.data;
       unsigned int new_position = 0;
 
-      if (soft_gate->control.some) { // Check gate and control
+      if (soft_gate->control.some) {  // Check gate and control
         unsigned int control = soft_gate->control.data;
         if (leftmost[soft_gate->position.qubit] > leftmost[control]) {
           new_position = leftmost[soft_gate->position.qubit];
@@ -140,7 +140,7 @@ Result circuit_compact(Circuit *circuit) {
 
         leftmost[soft_gate->position.qubit] = new_position + 1;
         leftmost[control] = new_position + 1;
-      } else { // Just check gate
+      } else {  // Just check gate
         new_position = leftmost[soft_gate->position.qubit];
         leftmost[soft_gate->position.qubit] += 1;
       }
@@ -174,7 +174,7 @@ Result circuit_compact(Circuit *circuit) {
     }
   }
 
-  // Create the hardened gate representation 
+  // Create the hardened gate representation
   // Flat positions without a gate are left pointing to NULL; it's the
   // user's responsability to check whether they're pointing to a valid
   // location.
@@ -218,17 +218,17 @@ Result circuit_compact(Circuit *circuit) {
 // The simulation can be thought of as a reduction over the slices;
 //
 // ```ASCII
-//                            (when layers exhausted)        
+//                            (when layers exhausted)
 //                           +----------------------->[Final output]
-//                           |                                 
-//                     +-----+----+                            
+//                           |
+//                     +-----+----+
 //                     |  Slice   |   <[as input to next slice]
-// [input array] --->--+          +-<-+                   
-//   (*inout)          |Simulation|   |                   
-//                     +-----+----+   |                   
-//                           |        |                   
-//                           +---->---+                   
-//                   [slice output]>                           
+// [input array] --->--+          +-<-+
+//   (*inout)          |Simulation|   |
+//                     +-----+----+   |
+//                           |        |
+//                           +---->---+
+//                   [slice output]>
 // ```
 //
 // (This is also why `inout` is modified in place.)
@@ -245,18 +245,62 @@ Result circuit_compact(Circuit *circuit) {
 // particular that the matrix corresponding to a gate can be thought of
 // in terms of projectors:
 //
-//      
-//   +-      -+
-//   |  a  b  |
-//   |  c  d  |
-//   +-      -+
+//       <0| <1|
+//     +-       -+
+// |0> |  a   b  |
+//     |         |
+// |1> |  c   d  |
+//     +-       -+
 //
-// Pseudocode of the SSS follows:   
+// Pseudocode of the SSS follows:
 //
-// 1. (For all permutations of a string as big as the number of gates in
-//    the slice)
-//    x := perm(string of len gates_len)
-// 2.   
+// 1. For all permutations of a string as big as the number of gates in
+//    the slice
+//                x := perm(string of len gates_len)
+//    corresponding to the "input" in only the gates' qubits
+// 2. For each x, consider also all permutations
+//                y := perm(string of len gates_len)
+//    corresponding to the "output" in the gates' qubits
+// 3. For each y, calculate the coefficient c of the output by
+// 3.1. Letting
+//              c := 1.
+// 3.2. For each gate in the slice,
+// 3.2.1. Check if the gate is *not* controlled, or if its control is
+//        set in the corresponding bit of x
+// 3.2.2. If so, go to 3.2.2a., else go to 3.2.2b.
+// 3.2.2a.  Multiply c by the element of the gate matrix M corresponding
+//          to the relevant bits of x and y, x' and y' respectively:
+//                c *= M[y', x']
+// 3.2.2b.  Multiply c by the element of the 2-identity matrix
+//          corresponding to the relevant bits of x and y, x' and y'
+//          respectively:
+//                c *= (x' XOR 1) XOR y'
+// 3.3. Take all bitstrings of appropriate size (2**circuit qubit count)
+//      whose relevant bits match x
+//                z := bitstring matching x
+// 3.4. Let the bitstring o be the bitstring whose irrelevant bits match
+//      z, but whose relevant bits have been set to match y
+//                o := z project y
+// 3.5 Set the relevant output vector component as
+//                output[o] += c * input[z]
+//
+//
+// In order to consider all bitstrings varying in some bitmask, the
+// following technique was employed:
+//    bitstring := b
+//    x := 0
+//    x += 1
+//    while ( x AND b ) != x    (meaning that there are digits outside
+//                               the intended mask region)
+//        Take the rightmost 1-bit of x and rightpropagate and invert
+//        the value. Let this value be p.
+//        Find what's the rightmost 1-bit of b  that is whithin p,
+//        let this be delta.
+//        Let
+//            x := (x & p) + delta
+//
+// What this does, in a nutshell, is keep adding the rightmost offending
+// bit to the value of x until it's within the intended mask.
 Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
   if (circuit == NULL) {
     return result_get_invalid_reason("circuit pointer is null");
@@ -271,6 +315,7 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
   Vector slice_gates;
   vector_init(&slice_gates, sizeof(SoftGate *), 0);
 
+  // Find how many/what the gates for this slice are
   for (unsigned int slice = 0; slice < circuit->depth[1]; ++slice) {
     unsigned int gates_len =
         *(unsigned int *)(vector_get_raw(&circuit->slice_gate_count, slice));
@@ -286,14 +331,23 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
       filter_into_vector(&slice_gates_filter, &slice_gates);
     }
 
+    // Output vector to be written to during computation; its value
+    // is transferred to inout after a slice cycle
     double _Complex output[1 << qubits];
     memset(output, 0, sizeof(output));
 
+    // Bitmasks:
+    //    Relevant bits (gates only)
     unsigned int mask = 0;
+    //    Relevant bits (gates and controls)
     unsigned int cmask = 0;
+    //    Irrelevant bits (not gates, not controls)
     unsigned int ncmask = 0;
+
+    // Count of relevant bits
     unsigned int relevant = 0;
 
+    // Determine the bitmasks + `relevant`
     for (unsigned int i = 0; i < gates_len; ++i) {
       unsigned int gate_i_qubit;
       Option_Uint gate_i_control;
@@ -313,8 +367,10 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
     }
     ncmask = (~cmask) & (leftmost | (leftmost - 1));
 
+    // 1. (see above)
     unsigned int x = 0;
     for (unsigned int i = 0; i < (1U << relevant); ++i) {
+      // 2. (see above)
       for (unsigned int y = 0; y < (1U << gates_len); ++y) {
         double _Complex coef = 1.;
         unsigned int proj = 0;
@@ -326,24 +382,23 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
           proj |= (y >> j) << gate_j.position.qubit;
           cset = (!gate_j.control.some) || ((x >> gate_j.control.data) & 1U);
 
-          if ((x >> gate_j.position.qubit) & 1U) {
-            if (cset)
-              coef *= gate_j.gate->matrix[(y >> j) & 1U][1];
-            else
-              coef *= (double _Complex)(((y >> j) & 1U));
-          } else {
-            if (cset)
-              coef *= gate_j.gate->matrix[(y >> j) & 1U][0];
-            else
-              coef *= (double _Complex)(1U ^ (1U & (y >> j)));
-          }
+          unsigned int relevant_x_bit = (x >> gate_j.position.qubit) & 1U;
+          unsigned int relevant_y_bit = (y >> j) & 1U;
+          if (cset)
+            coef *= gate_j.gate->matrix[relevant_y_bit][relevant_x_bit];
+          else
+            coef *= (double _Complex)((relevant_x_bit ^ 1U) ^ relevant_y_bit);
         }
 
+        // 3.4. (see above)
         unsigned int z = 0;
         for (unsigned int j = 0; j < (1U << (qubits - relevant)); ++j) {
           unsigned int out_index = (proj & mask) | ((z | x) & (~mask));
           output[out_index] += coef * (*inout)[z | x];
 
+          // Move to the next number z in the "relevant qubit number space";
+          // it's like counting using only some fingers!
+          // See above for a detailed explanation
           z += 1;
           while ((z & ncmask) != z) {
             unsigned int p = ~((z & (-z)) | ((z & (-z)) - 1));
@@ -352,6 +407,8 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
         }
       }
 
+      // Move to the next relevant x
+      // See above for a detailed explanation
       x = x + 1;
       while ((x & cmask) != x) {
         unsigned int p = ~((x & (-x)) | ((x & (-x)) - 1));
