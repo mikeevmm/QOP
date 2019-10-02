@@ -6,7 +6,9 @@
  * All methods that act upon a `Gate` are prefixed with `gate_`.
  **/
 
-#pragma once
+#ifndef QOP_GATE_H_
+#define QIO_GATE_H_
+
 #include <complex.h>
 #include <math.h>
 #include <stddef.h>
@@ -104,3 +106,5 @@ Gate gate_new_unwrap(Result result);
 // Note that this function does not free `gate` itself, as it cannot
 // ensure that the variable does not live in the stack.
 void gate_free(Gate *gate);
+
+#endif // QOP_GATE_H_

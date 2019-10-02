@@ -8,7 +8,10 @@
  * properties. (This `unwrap`/return `Result` pattern is also borrowed
  * from Rust).
  **/
-#pragma once
+
+#ifndef QOP_OPTION_H_
+#define QOP_OPTION_H_
+
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -93,3 +96,5 @@ Option option_some_with_data(void *data);
 Option_Int option_from_int(int data);
 Option_Uint option_from_uint(unsigned int data);
 Option_Double option_from_double(double data);
+
+#endif // QOP_OPTION_H_

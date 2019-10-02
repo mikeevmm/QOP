@@ -9,7 +9,9 @@
  * `circuit_`.
  **/
 
-#pragma once
+#ifndef QOP_CIRCUIT_H_
+#define QOP_CIRCUIT_H_
+
 #include "include/gate.h"
 #include "include/iter.h"
 #include "include/option.h"
@@ -106,3 +108,5 @@ Result circuit_run(Circuit* circuit, double _Complex (*inout)[]);
 // `Gate`s added to this circuit are not freed) and does not free the
 // `*circuit` pointer itself (because, again, it can be in the stack).
 Result circuit_free(Circuit* circuit);
+
+#endif // QOP_CIRCUIT_H_

@@ -2,7 +2,9 @@
  * Declaration of the generic iterator structure and associated types.
  **/
 
-#pragma once
+#ifndef QOP_ITER_H_
+#define QOP_ITER_H_
+
 #include <stdbool.h>
 #include <stdlib.h>
 #include "include/option.h"
@@ -66,3 +68,5 @@ Filter filter_create(Iter iter, FilterFn filter_fn);
 // Once the underlying iterator runs out, the none `Option` is always
 // yielded.
 Option filter_next(Filter *filter);
+
+#endif // QOP_ITER_H_

@@ -6,7 +6,10 @@
  * pointers, and it is the user's responsability to cast to the
  * appropriate types.
  **/
-#pragma once
+
+#ifndef QOP_VECTOR_H_
+#define QOP_VECTOR_H_ 
+
 #include "include/iter.h"
 #include <stdbool.h>
 #include <stdlib.h>
@@ -116,3 +119,5 @@ Iter vector_iter_create(Vector *v);
 // Nonetheless this is a common operation and so is abstracted into this
 // convenience function.
 Result filter_into_vector(Filter *filter, Vector *vector);
+
+#endif // QOP_VECTOR_H
