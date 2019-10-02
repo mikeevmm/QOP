@@ -128,6 +128,14 @@ Result gate_new_from_identifier(GateId identifier, double params[]) {
   return result;
 }
 
+Gate gate_new_unwrap(Result result)
+{
+  void *gate_ptr = result_unwrap(result);
+  Gate result_gate = *(Gate *)gate_ptr;
+  free(gate_ptr);
+  return result_gate;
+}
+
 void reparameterize_rx_gate(double _Complex matrix[2][2], double params[]) {
   double theta = params[0];
   matrix[0][0] = cos(theta / 2);
@@ -149,4 +157,6 @@ void reparameterize_rz_gate(double _Complex matrix[2][2], double params[]) {
   matrix[1][1] = cexp(theta * _Complex_I);
 }
 
-void gate_free(Gate *gate) { free(gate); }
+void gate_free(Gate *gate) {
+  /* No internal heap allocation in current implementation */
+}

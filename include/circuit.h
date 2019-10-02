@@ -56,6 +56,11 @@ bool _circuit_filter_is_soft_gate(void* ptr);
 // `qubit_count` is the number of "wires" in the circuit.
 Result circuit_create(unsigned int qubit_count);
 
+// Unwraps the result of a `circuit_create` call; attempts to unwrap
+// the given `Result`; if successful, frees the heap memory of the data,
+// returning a stack copy of it.
+Circuit circuit_unwrap_create(Result result);
+
 // Adds a previously initialized `Gate` to the circuit, on line `qubit`,
 // and optionally controlled by another line, as specified by `control`.
 // Although a `SoftGate` is created internally from these arguments, the

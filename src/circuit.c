@@ -54,6 +54,13 @@ Result circuit_create(unsigned int qubit_count) {
   return result_get_valid_with_data(new_circuit);
 }
 
+Circuit circuit_unwrap_create(Result result) {
+  void *data = result_unwrap(result);
+  Circuit ret_circuit = *(Circuit *)data;
+  free(data);
+  return ret_circuit;
+}
+
 // Makes a new `SoftGate` out of the given `Gate`, and adds that to the
 // `Circuit`'s internal list. The circuit size is updated as needed.
 // Returns `Result(circuit)`.
@@ -437,8 +444,6 @@ Result circuit_free(Circuit *circuit) {
   vector_free(&circuit->slice_gate_count);
 
   if (circuit->hardened_gates != NULL) free(circuit->hardened_gates);
-  free(circuit);
-  circuit = NULL;
 
   return result_get_empty_valid();
 }

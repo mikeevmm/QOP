@@ -95,6 +95,11 @@ Result gate_new_from_matrix(double _Complex matrix[2][2], ReparamFnPtr reparamFn
 // the `params` argument.
 Result gate_new_from_identifier(GateId identifier, double params[]);
 
+// Unwraps the result of a `gate_new_...` call; attempts to unwrap
+// the given `Result`; if successful, frees the heap memory of the data,
+// returning a stack copy of it.
+Gate gate_new_unwrap(Result result);
+
 // Frees all of the heap memory internally allocated by the given `Gate`.
 // Note that this function does not free `gate` itself, as it cannot
 // ensure that the variable does not live in the stack.
