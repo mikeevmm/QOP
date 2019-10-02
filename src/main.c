@@ -8,10 +8,15 @@
 #define CPARTS(C) creal(C), cimag(C)
 
 int main() {
-  Circuit circuit = circuit_unwrap_create(circuit_create(2));
-  Gate x =  gate_new_unwrap(gate_new_from_identifier(GateX, NULL));
-  Gate x2 = gate_new_unwrap(gate_new_from_identifier(GateX, NULL));
-  Gate h =  gate_new_unwrap(gate_new_from_identifier(GateH, NULL));
+  Circuit circuit;
+  result_unwrap(circuit_init(&circuit, 2));
+  Gate x ;
+  result_unwrap(gate_init_from_identifier(&x, GateX, NULL));
+  Gate x2;
+  result_unwrap(gate_init_from_identifier(&x2, GateX, NULL));
+  Gate h ;
+  result_unwrap(gate_init_from_identifier(&h, GateH, NULL));
+  
   result_unwrap(circuit_add_gate(&circuit, &x, 1, option_none_uint()));
   result_unwrap(circuit_add_gate(&circuit, &x2, 0, option_none_uint()));
   result_unwrap(circuit_add_gate(&circuit, &h, 0, option_from_uint(1)));

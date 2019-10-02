@@ -1,38 +1,23 @@
 #include "include/gate.h"
 
-// Creates a new gate from a matrix array.
+// Initialize a new gate from a matrix array.
 // It is important that we `memcpy` the array, rather than assigning it,
 // because we want to make sure that reparameterization doesn't affect
 // other gates.
-Result gate_new_from_matrix(double _Complex matrix[2][2],
-                            ReparamFnPtr reparamFn) {
-  Gate result;
+Result gate_init_from_matrix(Gate *gate, double _Complex matrix[2][2],
+                             ReparamFnPtr reparamFn) {
   // result.matrix = matrix;
-  memcpy(result.matrix, matrix, GATE_SINGLE_QUBIT_SIZE);
-  result.reparamFn = reparamFn;
-  result.id = GateCustom;
+  memcpy(gate->matrix, matrix, GATE_SINGLE_QUBIT_SIZE);
+  gate->reparamFn = reparamFn;
+  gate->id = GateCustom;
 
-  void *gate_ptr = malloc(sizeof(Gate));
-  if (gate_ptr == NULL) {
-    return result_get_invalid_reason("could not malloc");
-  }
-  memcpy(gate_ptr, &result, sizeof(Gate));
-
-  return result_get_valid_with_data(gate_ptr);
+  return result_get_valid_with_data(gate);
 }
 
-// Creates a gate using an identifier from the GateId enum
+// Initializes a gate using an identifier from the GateId enum
 // It's basically `gate_new_from_matrix` with a big switch statement.
-Result gate_new_from_identifier(GateId identifier, double params[]) {
-  Result result;
-  result.valid = true;
-
-  // Gate object to return pointer to (wrapped in Result)
-  Gate *result_gate_ptr = (Gate *)malloc(sizeof(Gate));
-  if (result_gate_ptr == NULL) {
-    return result_get_invalid_reason("could not malloc");
-  }
-
+Result gate_init_from_identifier(Gate *gate, GateId identifier,
+                                 double params[]) {
   // Determine correct matrix and reparam_fn (latter can be NULL)
   double _Complex matrix[2][2] = {{0, 0}, {0, 0}};
 
@@ -64,7 +49,7 @@ Result gate_new_from_identifier(GateId identifier, double params[]) {
     } break;
     case GateRx: {
       if (params == NULL) {
-        result = result_get_invalid_reason(
+        return result_get_invalid_reason(
             "required theta parameter was not specified for GateRx "
             "instantiation");
       }
@@ -79,7 +64,7 @@ Result gate_new_from_identifier(GateId identifier, double params[]) {
       break;
     case GateRy: {
       if (params == NULL) {
-        result = result_get_invalid_reason(
+        return result_get_invalid_reason(
             "required theta parameter was not specified for GateRy "
             "instantiation");
       }
@@ -93,7 +78,7 @@ Result gate_new_from_identifier(GateId identifier, double params[]) {
     }
     case GateRz: {
       if (params == NULL) {
-        result = result_get_invalid_reason(
+        return result_get_invalid_reason(
             "required theta parameter was not specified for GateRz "
             "instantiation");
       }
@@ -106,34 +91,19 @@ Result gate_new_from_identifier(GateId identifier, double params[]) {
       break;
     }
     default:
-      result = result_get_invalid_reason("unknown GateId specification");
+      return result_get_invalid_reason("unknown GateId specification");
       break;
   }
 
-  // Something went wrong
-  if (!result.valid) {
-    free(result_gate_ptr);
-    return result;
-  }
-
-  // Pack everything into heap allocated struct
+  // Pack everything into the given struct
   {
-    result_gate_ptr->id = identifier;
-    memcpy(result_gate_ptr->matrix, matrix, GATE_SINGLE_QUBIT_SIZE);
-    result_gate_ptr->reparamFn = reparam_fn;
+    gate->id = identifier;
+    memcpy(gate->matrix, matrix, GATE_SINGLE_QUBIT_SIZE);
+    gate->reparamFn = reparam_fn;
   }
 
-  // Return as result
-  result.content.data = result_gate_ptr;
-  return result;
-}
-
-Gate gate_new_unwrap(Result result)
-{
-  void *gate_ptr = result_unwrap(result);
-  Gate result_gate = *(Gate *)gate_ptr;
-  free(gate_ptr);
-  return result_gate;
+  // Return pointer as result
+  return result_get_valid_with_data(gate);
 }
 
 void reparameterize_rx_gate(double _Complex matrix[2][2], double params[]) {

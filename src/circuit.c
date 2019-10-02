@@ -10,7 +10,7 @@ bool _circuit_filter_is_soft_gate(void *ptr) {
   return sg_ptr != NULL;
 }
 
-Result circuit_create(unsigned int qubit_count) {
+Result circuit_init(Circuit *circuit, unsigned int qubit_count) {
   if (qubit_count == 0) {
     return result_get_invalid_reason("cannot create a 0-qubit circuit");
   }
@@ -38,27 +38,14 @@ Result circuit_create(unsigned int qubit_count) {
     }
   }
 
-  // Malloc the circuit to return
-  Circuit *new_circuit = (Circuit *)malloc(sizeof(Circuit));
-  if (new_circuit == NULL) {
-    return result_get_invalid_reason("could not malloc circuit");
-  }
-
   // Set circuit properties and return
-  new_circuit->depth[0] = qubit_count;
-  new_circuit->depth[1] = 0;
-  new_circuit->soft_gates = soft_gates_vector;
-  new_circuit->slice_gate_count = slice_gate_vector;
-  new_circuit->hardened_gates = NULL;
+  circuit->depth[0] = qubit_count;
+  circuit->depth[1] = 0;
+  circuit->soft_gates = soft_gates_vector;
+  circuit->slice_gate_count = slice_gate_vector;
+  circuit->hardened_gates = NULL;
 
-  return result_get_valid_with_data(new_circuit);
-}
-
-Circuit circuit_unwrap_create(Result result) {
-  void *data = result_unwrap(result);
-  Circuit ret_circuit = *(Circuit *)data;
-  free(data);
-  return ret_circuit;
+  return result_get_valid_with_data(circuit);
 }
 
 // Makes a new `SoftGate` out of the given `Gate`, and adds that to the

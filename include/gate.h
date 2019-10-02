@@ -2,12 +2,12 @@
  *  Declaration of all structures necessary to the definition of a gate
  * in an isolated sense. Also declared are macros and constants relevant
  * to operations with the `Gate` struct.
- * 
+ *
  * All methods that act upon a `Gate` are prefixed with `gate_`.
  **/
 
 #ifndef QOP_GATE_H_
-#define QIO_GATE_H_
+#define QOP_GATE_H_
 
 #include <complex.h>
 #include <math.h>
@@ -68,7 +68,7 @@ typedef void (*ReparamFnPtr)(double _Complex[2][2], double[]);
 // Representation of a `Gate` as an isolated object (i.e. outside of the
 // context of a circuit).
 // Note that the reparameterization function pointer `reparamFn` may be
-// NULL if the gate is not parameterized/reparameterizable.  
+// NULL if the gate is not parameterized/reparameterizable.
 typedef struct Gate {
   double _Complex matrix[2][2];
   ReparamFnPtr reparamFn;
@@ -88,14 +88,16 @@ void gate_reparameterize_rz(double _Complex matrix[2][2], double params[]);
 // passed by reference.
 // The Gate object itself is stored in the heap, and should be freed
 // with `gate_free` when appropriate!
-Result gate_new_from_matrix(double _Complex matrix[2][2], ReparamFnPtr reparamFn);
+Result gate_init_from_matrix(Gate *gate, double _Complex matrix[2][2],
+                             ReparamFnPtr reparamFn);
 
 // Creates a new gate from a `enum GateId` gate identifier, storing it
 // in the heap, and returns a pointer.
 // Some gates (such as the rotation gates) expect parameters, to be
 // specified via `params`, but otherwise it is safe to pass `NULL` as
 // the `params` argument.
-Result gate_new_from_identifier(GateId identifier, double params[]);
+Result gate_init_from_identifier(Gate *gate, GateId identifier,
+                                 double params[]);
 
 // Unwraps the result of a `gate_new_...` call; attempts to unwrap
 // the given `Result`; if successful, frees the heap memory of the data,
@@ -107,4 +109,4 @@ Gate gate_new_unwrap(Result result);
 // ensure that the variable does not live in the stack.
 void gate_free(Gate *gate);
 
-#endif // QOP_GATE_H_
+#endif  // QOP_GATE_H_

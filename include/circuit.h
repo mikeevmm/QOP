@@ -4,7 +4,7 @@
  * few reflexive properties. The `SoftGate` structure, here defined,
  * defines a gate in a circuit, as opposed to a gate as an isolated
  * entity.
- *  
+ *
  * All methods that operate on a circuit (here declared) are prefixed by
  * `circuit_`.
  **/
@@ -29,7 +29,7 @@ typedef struct GatePosition {
 typedef struct SoftGate {
   GatePosition position;
   Option_Uint control;
-  Gate *gate;
+  Gate* gate;
 } SoftGate;
 
 typedef struct Circuit {
@@ -44,7 +44,7 @@ typedef struct Circuit {
 // For example, a gate positioned on the second qubit of the third slice
 // of a five qubit circuit has a flat index of `2*5+1=11`, since the
 // third slice has index `2`, and the second qubit has index `1`.
-unsigned int soft_gate_flat_position(Circuit *circuit, SoftGate *soft_gate);
+unsigned int soft_gate_flat_position(Circuit* circuit, SoftGate* soft_gate);
 
 // Function for internal use.
 // Used with a `Filter` (see `Filter.h`) to skip over NULL pointers in
@@ -53,15 +53,9 @@ unsigned int soft_gate_flat_position(Circuit *circuit, SoftGate *soft_gate);
 // SoftGate pointer.
 bool _circuit_filter_is_soft_gate(void* ptr);
 
-// Creates a `Circuit` object on the heap and returns a pointer to that
-// memory block.
+// Initializes a given `Circuit` object.
 // `qubit_count` is the number of "wires" in the circuit.
-Result circuit_create(unsigned int qubit_count);
-
-// Unwraps the result of a `circuit_create` call; attempts to unwrap
-// the given `Result`; if successful, frees the heap memory of the data,
-// returning a stack copy of it.
-Circuit circuit_unwrap_create(Result result);
+Result circuit_init(Circuit* circuit, unsigned int qubit_count);
 
 // Adds a previously initialized `Gate` to the circuit, on line `qubit`,
 // and optionally controlled by another line, as specified by `control`.
@@ -91,13 +85,13 @@ Result circuit_compact(Circuit* circuit);
 
 // Calculates the simulated output state of the circuit, when given some
 // input state as determined by `*inout`. The input state `|i>` is
-// determined by `*inout` such that 
+// determined by `*inout` such that
 //    `|i> = sum( (*inout)[k] |k> for k in 0..2**q )`,
 // with `q` the qubit count of the circuit, and `|k>` the `k`th basis
-// state. 
+// state.
 // `*inout` is used as a buffer during computation, so that it should be
 // passed in by reference, and the method is destructive under `*inout`.
-// The final output is stored in `(*inout)[]`. 
+// The final output is stored in `(*inout)[]`.
 Result circuit_run(Circuit* circuit, double _Complex (*inout)[]);
 
 // Frees the members of the `Circuit` that were allocated at
@@ -109,4 +103,4 @@ Result circuit_run(Circuit* circuit, double _Complex (*inout)[]);
 // `*circuit` pointer itself (because, again, it can be in the stack).
 Result circuit_free(Circuit* circuit);
 
-#endif // QOP_CIRCUIT_H_
+#endif  // QOP_CIRCUIT_H_
