@@ -37,6 +37,13 @@ typedef struct Circuit {
   SoftGate** hardened_gates;
 } Circuit;
 
+// Gives a 1D index of the `SoftGate`'s position, by counting along each
+// slice sequentially.
+// For example, a gate positioned on the second qubit of the third slice
+// of a five qubit circuit has a flat index of `2*5+1=11`, since the
+// third slice has index `2`, and the second qubit has index `1`.
+unsigned int soft_gate_flat_position(Circuit *circuit, SoftGate *soft_gate);
+
 // Function for internal use.
 // Used with a `Filter` (see `Filter.h`) to skip over NULL pointers in
 // the hardened representation.

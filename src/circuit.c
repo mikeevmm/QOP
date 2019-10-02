@@ -15,6 +15,8 @@ Result circuit_create(unsigned int qubit_count) {
     return result_get_invalid_reason("cannot create a 0-qubit circuit");
   }
 
+  // Initialize the vector to store `SoftGate`s belonging to the circuit,
+  // pre-allocating space for a full slice.
   Vector soft_gates_vector;
   {
     Result vector_create_r =
@@ -24,6 +26,9 @@ Result circuit_create(unsigned int qubit_count) {
     }
   }
 
+  // Initialize the vector to store the gate count of each slice, which
+  // is useful later, when compacting/running the circuit.
+  // The vector is initialized with 0 capacity.
   Vector slice_gate_vector;
   {
     Result vector_create_r =
@@ -33,11 +38,13 @@ Result circuit_create(unsigned int qubit_count) {
     }
   }
 
+  // Malloc the circuit to return
   Circuit *new_circuit = (Circuit *)malloc(sizeof(Circuit));
   if (new_circuit == NULL) {
     return result_get_invalid_reason("could not malloc circuit");
   }
 
+  // Set circuit properties and return
   new_circuit->depth[0] = qubit_count;
   new_circuit->depth[1] = 0;
   new_circuit->soft_gates = soft_gates_vector;
@@ -47,6 +54,9 @@ Result circuit_create(unsigned int qubit_count) {
   return result_get_valid_with_data(new_circuit);
 }
 
+// Makes a new `SoftGate` out of the given `Gate`, and adds that to the
+// `Circuit`'s internal list. The circuit size is updated as needed.
+// Returns `Result(circuit)`.
 Result circuit_add_gate(Circuit *circuit, Gate *gate, unsigned int qubit,
                         Option_Uint control) {
   if (circuit == NULL) {
@@ -55,6 +65,7 @@ Result circuit_add_gate(Circuit *circuit, Gate *gate, unsigned int qubit,
 
   if (qubit > circuit->depth[0] - 1)
     return result_get_invalid_reason("qubit is out of bounds");
+
   if (control.some) {
     unsigned int control_value = control.data;
     if (control_value > circuit->depth[0] - 1)
@@ -81,17 +92,37 @@ Result circuit_add_gate(Circuit *circuit, Gate *gate, unsigned int qubit,
   return result_get_valid_with_data(circuit);
 }
 
+// Compacts the circuit by pushing each gate as left as possible, while
+// not allowing crossing of gates or gates with controls.
+// This is done by keeping tabs on what the leftmost occupied position
+// on each qubit line is, and then choosing for each gate the leftmost
+// position available in the lines that it occupies.
+// After doing this, the "hardened representation" is created by
+// allocating enough memory for it (now that we know the compacted size
+// of the circuit).
+// The hardened representation is just a memory block of `SoftGate *`
+// where the pointer to the gate at position (i,j) is located at
+// `<hardened gate block head> + <flat position of (i, j)>`.
+// This is also the function responsible for checking how many gates are
+// there in each slice and passing that to the `Circuit`'s
+// `slice_gates_count`.
+// This function does a two-pass on the gates collection, with an extra
+// cycle on the number of lines.
 Result circuit_compact(Circuit *circuit) {
   if (circuit == NULL) {
     return result_get_invalid_reason("circuit pointer is null");
   }
 
+  // Number of gates in each slice
   unsigned int slice_gate_count[circuit->depth[1]];
   memset(slice_gate_count, 0, sizeof(slice_gate_count));
 
+  // Current leftmost position available
   unsigned int leftmost[circuit->depth[0]];
   memset(leftmost, 0, sizeof(leftmost));
 
+  // Run over the `SoftGate`s and find the compacted position.
+  // Update leftmost available positions accordingly.
   {
     Iter soft_gates_iter = vector_iter_create(&circuit->soft_gates);
     Option next;
@@ -99,7 +130,7 @@ Result circuit_compact(Circuit *circuit) {
       SoftGate *soft_gate = (SoftGate *)next.data;
       unsigned int new_position = 0;
 
-      if (soft_gate->control.some) {
+      if (soft_gate->control.some) { // Check gate and control
         unsigned int control = soft_gate->control.data;
         if (leftmost[soft_gate->position.qubit] > leftmost[control]) {
           new_position = leftmost[soft_gate->position.qubit];
@@ -109,7 +140,7 @@ Result circuit_compact(Circuit *circuit) {
 
         leftmost[soft_gate->position.qubit] = new_position + 1;
         leftmost[control] = new_position + 1;
-      } else {
+      } else { // Just check gate
         new_position = leftmost[soft_gate->position.qubit];
         leftmost[soft_gate->position.qubit] += 1;
       }
@@ -119,6 +150,7 @@ Result circuit_compact(Circuit *circuit) {
     }
   }
 
+  // Update depth
   {
     unsigned int max = 0;
     for (unsigned int i = 0; i < circuit->depth[0]; i++) {
@@ -127,6 +159,7 @@ Result circuit_compact(Circuit *circuit) {
     circuit->depth[1] = max;
   }
 
+  // Copy the new slice gate counts over to the `Circuit` object
   {
     Result result;
     result = vector_clean(&circuit->slice_gate_count);
@@ -141,10 +174,15 @@ Result circuit_compact(Circuit *circuit) {
     }
   }
 
+  // Create the hardened gate representation 
+  // Flat positions without a gate are left pointing to NULL; it's the
+  // user's responsability to check whether they're pointing to a valid
+  // location.
   if (circuit->hardened_gates != NULL) {
     free(circuit->hardened_gates);
   }
 
+  // Allocate appropriate size...
   {
     size_t malloc_size =
         circuit->depth[0] * circuit->depth[1] * sizeof(SoftGate *);
@@ -156,6 +194,7 @@ Result circuit_compact(Circuit *circuit) {
     circuit->hardened_gates = (SoftGate **)new_malloc;
   }
 
+  // Iterate over the gates and copy pointers to appropriate location
   {
     Iter gates_iter = vector_iter_create(&circuit->soft_gates);
     Option next;
@@ -175,6 +214,49 @@ Result circuit_compact(Circuit *circuit) {
   return result_get_valid_with_data(circuit);
 }
 
+// Performs a simulation of an input.
+// The simulation can be thought of as a reduction over the slices;
+//
+// ```ASCII
+//                            (when layers exhausted)        
+//                           +----------------------->[Final output]
+//                           |                                 
+//                     +-----+----+                            
+//                     |  Slice   |   <[as input to next slice]
+// [input array] --->--+          +-<-+                   
+//   (*inout)          |Simulation|   |                   
+//                     +-----+----+   |                   
+//                           |        |                   
+//                           +---->---+                   
+//                   [slice output]>                           
+// ```
+//
+// (This is also why `inout` is modified in place.)
+// As such, only the slice simulation subroutine is discussed below.
+// The slice simulation subroutine (henceforth referred to as the SSS,
+// for short) operates on the superposition principle, whereas each
+// component of the input can be taken separately, as long as the
+// different wavefunction coefficients are added together.
+// On the other hand, the SSS attempts to exploit the fact that qubits
+// which are not affected by gates nor are control targets do not affect
+// the wavefunction coefficient, and so a "batch write" of the coefficient
+// can be made to all permutations of irrelevant qubits.
+// Finally, the SSS exploits the "meaning" of matrix multiplication, in
+// particular that the matrix corresponding to a gate can be thought of
+// in terms of projectors:
+//
+//      
+//   +-      -+
+//   |  a  b  |
+//   |  c  d  |
+//   +-      -+
+//
+// Pseudocode of the SSS follows:   
+//
+// 1. (For all permutations of a string as big as the number of gates in
+//    the slice)
+//    x := perm(string of len gates_len)
+// 2.   
 Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
   if (circuit == NULL) {
     return result_get_invalid_reason("circuit pointer is null");
@@ -240,20 +322,18 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
         for (unsigned int j = 0; j < gates_len; ++j) {
           bool cset;
           SoftGate gate_j;
-          {
-            gate_j = **(SoftGate **)(vector_get_raw(&slice_gates, j));
-          }
+          { gate_j = **(SoftGate **)(vector_get_raw(&slice_gates, j)); }
           proj |= (y >> j) << gate_j.position.qubit;
           cset = (!gate_j.control.some) || ((x >> gate_j.control.data) & 1U);
 
           if ((x >> gate_j.position.qubit) & 1U) {
             if (cset)
-              coef *= gate_j.gate->matrix[1][(y >> j) & 1U];
+              coef *= gate_j.gate->matrix[(y >> j) & 1U][1];
             else
               coef *= (double _Complex)(((y >> j) & 1U));
           } else {
             if (cset)
-              coef *= gate_j.gate->matrix[0][(y >> j) & 1U];
+              coef *= gate_j.gate->matrix[(y >> j) & 1U][0];
             else
               coef *= (double _Complex)(1U ^ (1U & (y >> j)));
           }
