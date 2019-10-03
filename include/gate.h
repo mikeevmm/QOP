@@ -75,9 +75,9 @@ typedef struct Gate {
   enum GateId id;
 } Gate;
 
-void gate_reparameterize_rx(double _Complex matrix[2][2], double params[]);
-void gate_reparameterize_ry(double _Complex matrix[2][2], double params[]);
-void gate_reparameterize_rz(double _Complex matrix[2][2], double params[]);
+void gate_reparameterize_rx(double _Complex (*matrix)[2][2], double params[]);
+void gate_reparameterize_ry(double _Complex (*matrix)[2][2], double params[]);
+void gate_reparameterize_rz(double _Complex (*matrix)[2][2], double params[]);
 
 // Creates a new `Gate` object from a given matrix and reparameterization
 // function pointer.

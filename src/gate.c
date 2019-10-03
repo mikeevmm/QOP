@@ -79,13 +79,13 @@ Result gate_init_from_identifier(Gate *gate, GateId identifier,
         return result_get_invalid_reason(
             "required theta parameter was not specified for GateRz "
             "instantiation");
-        double theta = params[0];
-        double _Complex theta_matrix[2][2] = {{1.0, 0.0},
-                                              {0.0, cexp(_Complex_I * theta)}};
-        memcpy(matrix, theta_matrix, GATE_SINGLE_QUBIT_SIZE);
-        reparam_fn = &gate_reparameterize_rz;
-        break;
       }
+      double theta = params[0];
+      double _Complex theta_matrix[2][2] = {{1.0, 0.0},
+                                            {0.0, cexp(_Complex_I * theta)}};
+      memcpy(matrix, theta_matrix, GATE_SINGLE_QUBIT_SIZE);
+      reparam_fn = &gate_reparameterize_rz;
+      break;
     }
     default:
       return result_get_invalid_reason("unknown GateId specification");
@@ -103,25 +103,25 @@ Result gate_init_from_identifier(Gate *gate, GateId identifier,
   return result_get_valid_with_data(gate);
 }
 
-void reparameterize_rx_gate(double _Complex matrix[2][2], double params[]) {
+void gate_reparameterize_rx(double _Complex (*matrix)[2][2], double params[]) {
   double theta = params[0];
-  matrix[0][0] = cos(theta / 2);
-  matrix[0][1] = -sin(theta / 2) * _Complex_I;
-  matrix[1][0] = -sin(theta / 2) * _Complex_I;
-  matrix[1][1] = cos(theta / 2);
+  (*matrix)[0][0] = cos(theta / 2);
+  (*matrix)[0][1] = -sin(theta / 2) * _Complex_I;
+  (*matrix)[1][0] = -sin(theta / 2) * _Complex_I;
+  (*matrix)[1][1] = cos(theta / 2);
 }
 
-void reparameterize_ry_gate(double _Complex matrix[2][2], double params[]) {
+void gate_reparameterize_ry(double _Complex (*matrix)[2][2], double params[]) {
   double theta = params[0];
-  matrix[0][0] = cos(theta / 2);
-  matrix[0][1] = -sin(theta / 2);
-  matrix[1][0] = sin(theta / 2);
-  matrix[1][1] = cos(theta / 2);
+  (*matrix)[0][0] = cos(theta / 2);
+  (*matrix)[0][1] = -sin(theta / 2);
+  (*matrix)[1][0] = sin(theta / 2);
+  (*matrix)[1][1] = cos(theta / 2);
 }
 
-void reparameterize_rz_gate(double _Complex matrix[2][2], double params[]) {
+void gate_reparameterize_rz(double _Complex (*matrix)[2][2], double params[]) {
   double theta = params[0];
-  matrix[1][1] = cexp(theta * _Complex_I);
+  (*matrix)[1][1] = cexp(theta * _Complex_I);
 }
 
 void gate_free(Gate *gate) {

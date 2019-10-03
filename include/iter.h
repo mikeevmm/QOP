@@ -44,6 +44,8 @@ Iter iter_get_empty();
 //    `<pointer to> ((void *)<iteration element pointer>) -> <include?>`
 typedef bool (*FilterFn)(void *);
 
+// Iterator that refers to another iterator, and only yields items that
+// evaluate to `true` under the filter function.
 typedef struct Filter {
   Iter iter;
   FilterFn filter_fn;

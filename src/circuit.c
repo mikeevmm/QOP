@@ -91,17 +91,11 @@ Result circuit_add_gate(Circuit *circuit, Gate *gate, unsigned int qubit,
 // This is done by keeping tabs on what the leftmost occupied position
 // on each qubit line is, and then choosing for each gate the leftmost
 // position available in the lines that it occupies.
-// After doing this, the "hardened representation" is created by
-// allocating enough memory for it (now that we know the compacted size
-// of the circuit).
-// The hardened representation is just a memory block of `SoftGate *`
-// where the pointer to the gate at position (i,j) is located at
-// `<hardened gate block head> + <flat position of (i, j)>`.
 // This is also the function responsible for checking how many gates are
 // there in each slice and passing that to the `Circuit`'s
 // `slice_gates_count`.
-// This function does a two-pass on the gates collection, with an extra
-// cycle on the number of lines.
+// This function does a single pass on the gates collection, with an
+// extra cycle on the number of lines.
 Result circuit_compact(Circuit *circuit) {
   if (circuit == NULL) {
     return result_get_invalid_reason("circuit pointer is null");
@@ -168,6 +162,16 @@ Result circuit_compact(Circuit *circuit) {
     }
   }
 
+  return result_get_valid_with_data(circuit);
+}
+
+// Creates the "hardened representation" by allocating enough memory for
+// it (known after compacting the circuit).
+// The hardened representation is just a memory block of `SoftGate *`
+// where the pointer to the gate at position (i,j) is located at
+// `<hardened gate block head> + <flat position of (i, j)>`.
+// This function does a single pass on the gates collection.
+Result circuit_harden(Circuit *circuit) {
   // Create the hardened gate representation
   // Flat positions without a gate are left pointing to NULL; it's the
   // user's responsability to check whether they're pointing to a valid

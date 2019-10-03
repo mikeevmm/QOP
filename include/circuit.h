@@ -77,11 +77,15 @@ Result circuit_add_gate(Circuit* circuit, Gate* gate, unsigned int qubit,
 // --[]-------o---[]--             --[]-o-[]--
 // ------[]---|-------   becomes   --[]-|-----
 // ----------[ ]------             ----[ ]----
-//
-// This function is also responsible for enumerating the gates in the
-// circuit and creating the so-called "hardened representation",
-// which is needed for simulating the circuit.
 Result circuit_compact(Circuit* circuit);
+
+
+// Enumerates the gates in the circuit and creates the so-called
+// "hardened representation", which allows O(1) access to all gates
+// given their position, at the expense of O(q²) memory use (with q the
+// number of qubits).
+// This is needed for simulating the circuit.
+Result circuit_harden(Circuit *circuit);
 
 // Calculates the simulated output state of the circuit, when given some
 // input state as determined by `*inout`. The input state `|i>` is
