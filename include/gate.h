@@ -63,7 +63,7 @@ static double _Complex gate_static_s[2][2] = {{1.0, 0.0}, {0.0, _Complex_I}};
 
 // `Gate` reparameterization function pointer type, of signature
 //    <pointer to> `(matrix, parameter array) -> void`
-typedef void (*ReparamFnPtr)(double _Complex[2][2], double[]);
+typedef void (*ReparamFnPtr)(double _Complex (*)[2][2], double[]);
 
 // Representation of a `Gate` as an isolated object (i.e. outside of the
 // context of a circuit).
@@ -80,22 +80,24 @@ void gate_reparameterize_ry(double _Complex matrix[2][2], double params[]);
 void gate_reparameterize_rz(double _Complex matrix[2][2], double params[]);
 
 // Creates a new `Gate` object from a given matrix and reparameterization
-// function pointer, storing it in the heap, and returns a pointer.
+// function pointer.
 // Note that the `matrix` is copied into the `Gate` struct (which is
 // possible as it is of known fixed size), and so the original may be
 // safely freed or popped from stack.
-// The same is not true of the reparameterization function, as it is
-// passed by reference.
-// The Gate object itself is stored in the heap, and should be freed
-// with `gate_free` when appropriate!
+// The Gate object might internally store data in the heap, which should
+// be freed with `gate_free` when appropriate!
 Result gate_init_from_matrix(Gate *gate, double _Complex matrix[2][2],
                              ReparamFnPtr reparamFn);
 
-// Creates a new gate from a `enum GateId` gate identifier, storing it
-// in the heap, and returns a pointer.
+// Creates a new gate from a `enum GateId` gate identifier,.
 // Some gates (such as the rotation gates) expect parameters, to be
 // specified via `params`, but otherwise it is safe to pass `NULL` as
 // the `params` argument.
+// Note that the `matrix` is copied into the `Gate` struct (which is
+// possible as it is of known fixed size), and so the original may be
+// safely freed or popped from stack.
+// The Gate object might internally store data in the heap, which should
+// be freed with `gate_free` when appropriate!
 Result gate_init_from_identifier(Gate *gate, GateId identifier,
                                  double params[]);
 
