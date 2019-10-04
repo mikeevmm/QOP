@@ -8,17 +8,22 @@ SRC = $(wildcard $(SRC_DIR)/*.c)
 OBJ = $(SRC:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 
 CPPFLAGS += -Iinclude/..
-CFLAGS += -g -O0 -Wall -Wextra -Wconversion -pedantic
+CDBGFLAGS = -g -O0
+CRLSFLAGS = -O3
+CFLAGS += -Wall -Wextra -Wconversion -pedantic
 LDFLAGS += -Llib
 LDLIBS += -lm -lblas -llapack -llapacke
 
-all: $(EXE)
+all: release
+
+release:
+	OPT=$(CRLSFLAGS) make $(EXE)
 
 $(EXE): $(OBJ)
 	$(CC) $(LDFLAGS) $^ $(LDLIBS) -o $@
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+	$(CC) $(CPPFLAGS) $(OPT) $(CFLAGS) -c $< -o $@
 
 clean:
 	$(RM) $(OBJ)
@@ -31,6 +36,8 @@ run:
 	./$(EXE)
 
 debug:
+	make clean
+	OPT=$(CDBGFLAGS) make $(EXE)
 	$(DBG) -q ./$(EXE)
 
 check:
