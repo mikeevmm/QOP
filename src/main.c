@@ -70,6 +70,7 @@ int main(void) {
     printf("in %d\n", end - start);
   }
 
+  optimizer_settings_free(&opt_settings);
   optimizer_gate_param_free(&rx_param);
   circuit_free(&circuit);
   gate_free(&x);
