@@ -19,10 +19,10 @@
 // Macro to print the (complex) matrix of a `Gate` object, NumPy style.
 #define PRINT_GATE_MATRIX(GATE)                                        \
   printf("[[%e+i*%e, %e+i*%e],\n [%e+i*%e, %e+i*%e]]\n",               \
-         creal(GATE.gate.matrix[0][0]), cimag(GATE.gate.matrix[0][0]), \
-         creal(GATE.gate.matrix[0][1]), cimag(GATE.gate.matrix[0][1]), \
-         creal(GATE.gate.matrix[1][0]), cimag(GATE.gate.matrix[1][0]), \
-         creal(GATE.gate.matrix[0][1]), cimag(GATE.gate.matrix[0][1]));
+         creal(GATE->matrix[0][0]), cimag(GATE->matrix[0][0]), \
+         creal(GATE->matrix[0][1]), cimag(GATE->matrix[0][1]), \
+         creal(GATE->matrix[1][0]), cimag(GATE->matrix[1][0]), \
+         creal(GATE->matrix[0][1]), cimag(GATE->matrix[0][1]));
 
 // Gate identifier for human-readable or filtering purposes.
 typedef enum GateId {

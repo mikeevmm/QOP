@@ -11,14 +11,14 @@ Result optimizer_gate_param_init(GateParameterization *gate_param, Gate *gate,
                                  unsigned int param_count, double *params,
                                  double *deltas) {
   if (gate == NULL) return result_get_invalid_reason("gate is null");
-  
+
   {
     void *mem = malloc(sizeof(double) * param_count);
     if (mem == NULL) return result_get_invalid_reason("could not malloc");
     memcpy(mem, params, param_count * sizeof(double));
     gate_param->params = (double *)mem;
   }
-  
+
   {
     void *mem = malloc(sizeof(double) * param_count);
     if (mem == NULL) return result_get_invalid_reason("could not malloc");
@@ -32,8 +32,7 @@ Result optimizer_gate_param_init(GateParameterization *gate_param, Gate *gate,
   return result_get_valid_with_data(gate_param);
 }
 
-void optimizer_gate_param_free(GateParameterization *gate_param)
-{
+void optimizer_gate_param_free(GateParameterization *gate_param) {
   free(gate_param->params);
   free(gate_param->deltas);
 }
@@ -144,8 +143,12 @@ Result optimizer_optimize(Optimizer *optimizer) {
 
     // Run simulation @ left
     {
-      memcpy(left_buffer, opt_settings.zero_state, state_size);
-      circuit_run(circuit, &left_buffer);
+      memcpy(left_buffer, opt_settings.zero_state, sizeof(left_buffer));
+
+      Result run_r = circuit_run(circuit, &left_buffer);
+      if (!run_r.valid) {
+        return run_r;
+      }
     }
 
     // Offset all parameters to the right
@@ -169,8 +172,11 @@ Result optimizer_optimize(Optimizer *optimizer) {
 
     // Run simulation @ right
     {
-      memcpy(right_buffer, opt_settings.zero_state, state_size);
-      circuit_run(circuit, &right_buffer);
+      memcpy(right_buffer, opt_settings.zero_state, sizeof(right_buffer));
+      Result run_r = circuit_run(circuit, &right_buffer);
+      if (!run_r.valid) {
+        return run_r;
+      }
     }
 
     // Calculate gradient
@@ -209,7 +215,7 @@ Result optimizer_optimize(Optimizer *optimizer) {
         // Calculate ith element of param gradient
         GateParameterization *relevant_param =
             opt_settings.parameterizations + param_offset;
-        double grad = coef / *((relevant_param)->deltas + i - param_offset);
+        double grad = coef / *(relevant_param->deltas + i - param_offset);
 
         // Set values of parameter gradient
         param_gradient[i] = grad;
