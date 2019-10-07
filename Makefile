@@ -12,7 +12,7 @@ CDBGFLAGS = -g -O0
 CRLSFLAGS = -O3
 CFLAGS += -Wall -Wextra -Wconversion -Wno-unused -pedantic
 LDFLAGS += -Llib
-LDLIBS += -lm -lblas -llapack -llapacke
+LDLIBS += -lm
 
 all: release
 
