@@ -103,20 +103,28 @@ Result gate_init_from_identifier(Gate *gate, GateId identifier,
   return result_get_valid_with_data(gate);
 }
 
+Result gate_clone(Gate *from, Gate *into)
+{
+  // There is currently no internal memory allocations in the implementation
+  // of the Gate struct
+  memcpy(into, from, sizeof(Gate));
+  return result_get_empty_valid();
+}
+
 void gate_reparameterize_rx(double _Complex (*matrix)[2][2], double params[]) {
   double theta = params[0];
-  (*matrix)[0][0] = cos(theta / 2);
-  (*matrix)[0][1] = -sin(theta / 2) * _Complex_I;
-  (*matrix)[1][0] = -sin(theta / 2) * _Complex_I;
-  (*matrix)[1][1] = cos(theta / 2);
+  (*matrix)[0][0] = (double _Complex)cos(theta / 2);
+  (*matrix)[0][1] = (double _Complex)-sin(theta / 2) * _Complex_I;
+  (*matrix)[1][0] = (double _Complex)-sin(theta / 2) * _Complex_I;
+  (*matrix)[1][1] = (double _Complex)cos(theta / 2);
 }
 
 void gate_reparameterize_ry(double _Complex (*matrix)[2][2], double params[]) {
   double theta = params[0];
-  (*matrix)[0][0] = cos(theta / 2);
-  (*matrix)[0][1] = -sin(theta / 2);
-  (*matrix)[1][0] = sin(theta / 2);
-  (*matrix)[1][1] = cos(theta / 2);
+  (*matrix)[0][0] = (double _Complex)cos(theta / 2);
+  (*matrix)[0][1] = (double _Complex)-sin(theta / 2);
+  (*matrix)[1][0] = (double _Complex)sin(theta / 2);
+  (*matrix)[1][1] = (double _Complex)cos(theta / 2);
 }
 
 void gate_reparameterize_rz(double _Complex (*matrix)[2][2], double params[]) {

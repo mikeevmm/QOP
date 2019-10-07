@@ -10,14 +10,14 @@ OBJ = $(SRC:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 CPPFLAGS += -Iinclude/..
 CDBGFLAGS = -g -O0
 CRLSFLAGS = -O3
-CFLAGS += -Wall -Wextra -Wconversion -pedantic
+CFLAGS += -Wall -Wextra -Wconversion -Wno-unused -pedantic
 LDFLAGS += -Llib
 LDLIBS += -lm -lblas -llapack -llapacke
 
 all: release
 
 release:
-	OPT=$(CRLSFLAGS) make $(EXE)
+	OPT="$(CRLSFLAGS)" make $(EXE)
 
 $(EXE): $(OBJ)
 	$(CC) $(LDFLAGS) $^ $(LDLIBS) -o $@
@@ -37,7 +37,7 @@ run:
 
 debug:
 	make clean
-	OPT=$(CDBGFLAGS) make $(EXE)
+	OPT="$(CDBGFLAGS)" make $(EXE)
 	$(DBG) -q ./$(EXE)
 
 check:

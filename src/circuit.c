@@ -332,7 +332,7 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
     // is transferred to inout after a slice cycle
     double _Complex output[1 << qubits];
     memset(output, 0, sizeof(output));
-
+    
     // Bitmasks:
     //    Relevant bits (gates only)
     unsigned int mask = 0;

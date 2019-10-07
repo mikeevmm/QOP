@@ -1,5 +1,8 @@
 #include "include/optimizer.h"
 
+// Returns a default `AdadeltaSettings` struct.
+// The default values here passed are the same used in section 4.1. of
+// the ADADELTA paper (arXiv:1212.5701).
 AdadeltaSettings optimizer_adadelta_get_default() {
   AdadeltaSettings ada_default;
   ada_default.rho = 0.95;
@@ -7,6 +10,10 @@ AdadeltaSettings optimizer_adadelta_get_default() {
   return ada_default;
 }
 
+// Initializes a new `GateParameterization` object.
+// There are heap memory allocations to copy `params` and `deltas` into
+// which should later be freed with `optimizer_gate_param_free`. That
+// call is the user's responsability.
 Result optimizer_gate_param_init(GateParameterization *gate_param, Gate *gate,
                                  unsigned int param_count, double *params,
                                  double *deltas) {
@@ -32,11 +39,20 @@ Result optimizer_gate_param_init(GateParameterization *gate_param, Gate *gate,
   return result_get_valid_with_data(gate_param);
 }
 
+// Frees the internal heap memory allocations made at initialization.
 void optimizer_gate_param_free(GateParameterization *gate_param) {
   free(gate_param->params);
   free(gate_param->deltas);
 }
 
+// Initializes an `OptimizerSettings` object.
+// There is an internal malloc to store a precomputed |000...> state.
+// This should be later freed by the user using `optmizer_settings_free`.
+// Otherwise, only that `*hamiltonian` is a row major flattened square
+// matrix is of note, but the user is alerted in the documentation to
+// make the appropriate cast. There is, unfortunately, no way I could
+// find to sanity check it, although gcc does produce an invalid cast
+// warning.
 Result optimizer_settings_init(OptimizerSettings *opt_settings,
                                Circuit *circuit, double _Complex *hamiltonian,
                                double stop_at,
@@ -49,8 +65,10 @@ Result optimizer_settings_init(OptimizerSettings *opt_settings,
   if (hamiltonian == NULL)
     return result_get_invalid_reason("given hamiltonian* is null");
   if (parameterizations == NULL)
-    return result_get_invalid_reason("given parameterizations is null");
+    return result_get_invalid_reason("given reparams is null");
 
+  // Create |000...> state
+  // malloc some memory, compute the state into that and save the pointer.
   double _Complex *zero_state;
   {
     unsigned int state_size = 1U << circuit->depth[0];
@@ -63,20 +81,26 @@ Result optimizer_settings_init(OptimizerSettings *opt_settings,
     zero_state[0] = (double _Complex)1.;
   }
 
+  // Initialize fields of the new OptimizerSettings.
   opt_settings->circuit = circuit;
   opt_settings->hamiltonian = hamiltonian;
   opt_settings->stop_at = stop_at;
-  opt_settings->parameterizations = parameterizations;
-  opt_settings->parameterization_count = parameterizations_count;
+  opt_settings->reparams = parameterizations;
+  opt_settings->reparams_count = parameterizations_count;
   opt_settings->zero_state = zero_state;
 
   return result_get_valid_with_data(opt_settings);
 }
 
+// Frees the heap memory internally allocated during
+// `optimizer_settings_init`.
 void optimizer_settings_free(OptimizerSettings *opt_settings) {
   free(opt_settings->zero_state);
 }
 
+// Initializes a new `Optimizer` object.
+// This is just a glorified (`OptimizerSettings`, `AdadeltaSettings`)
+// pair.
 Result optimizer_init(Optimizer *optimizer, OptimizerSettings opt_settings,
                       AdadeltaSettings ada_settings) {
   optimizer->opt_settings = opt_settings;
@@ -84,6 +108,129 @@ Result optimizer_init(Optimizer *optimizer, OptimizerSettings opt_settings,
   return result_get_empty_valid();
 }
 
+// Performs the actual optimization of the parameters pointed to in the
+// `OptimizationSettings` object.
+// The optimization routine itself is just the ADADELTA algorithm, very
+// neatly presented in the paper and copied here for convenience:
+//
+//  =====================================================
+//  **Algorithm 1** Computing ADADELTA update at time $t$
+//  -----------------------------------------------------
+//  **Require**: Decay rate $\rho$, Constant $\epsilon$
+//  **Require**: Initial parameter $x_1$
+//  1: Initialize accumulation variables $E[g^2]_0 = 0$,
+//     $E[\Delta x^2]_0 = 0$
+//  2: **for** $t=1$ **do** %% Loop over # of updates
+//  3:    Compute Gradient: $g_t$
+//  4:    Accumulate Gradient:
+//       $E[g^2]_t = \rho E[g^2]_{t-1} + (1 - \rho) g_t^2
+//  5:    Compute Update:
+//       $\Delta x_t = -\frac{RMS[\Delta x]_{t-1}}{RMS[g]_t} g_t$
+//  6:    Accumulate Updates:
+//       $E[\Delta x^2]_t = \rho E[\Delta x^2]_{t-1} +
+//                                       (1 - \rho) \Delta x_t^2$
+//  7:    Apply Update: $x_{t+1} = x_t + \Delta x_t$
+//  =====================================================
+//
+// In this particular case, the "position" vector is considered to be
+// the vector of all concatenated parameters, and the computation of the
+// gradient is based on a simple finite difference approximation, with
+// further algebraic optimization (see below). Further, it is also of
+// notice that some of the above steps were compacted into a single
+// pass over the gates (since the above algorithm is phrased "vectorially",
+// while the programmatic approach is component-wise). Such compactions
+// are commented appropriately inline.
+// TODO: This is incorrect
+// The gradient calculation routine is as follows:
+//
+// 1. Offset each parameter $\theta_i$ by $+\Delta_i$, making the
+//   appropriate reparameterizations.
+// 2. Compute the output of the circuit with each new parameter (preserving
+//   the others as originals), when given |000...> as input.
+//   Store the output in `buffer_right`.
+// 3. Offset each (original) parameter $\theta_i$ by $-\Delta_i$, making
+//   the appropriate reparameterizations. Store the output in
+//   `buffer_left`.
+// 4. Compute the expectation value gradient, given these two states.
+//
+// The expectation value gradient is calculated based on an algebraically
+// simplified expression, whose deduction follows:
+//
+//  Let $\vec{\Delta}: \vec{\Delta}_i = \Delta_i$,
+//  Let $\ket{\phi}$ be the output state given some parameters,
+//  Let $\Theta: \Theta_i = \theta_i$,
+//  Let the hamiltonian be $H$, and the action of the quantum circuit be
+//   the unitary matrix $U$,
+//  Let $C$ be the cost function, which is identical to the expectation
+//   value of the Hamiltonian
+//  Let $\hat{e}_p$ denote a basis versor,
+//  Let $q$ be the number of qubits in the circuit,
+//  Following the implicit sum convention (sometimes made explicit),
+//
+// Then:
+//  $$ \nabla_\Theta C = \hat{e}_p \pdv{\theta_p}
+//                                         \qty( \expval{H}{\phi} ) = $$
+//  $$                 = \hat{e}_p \pdv{\theta_p}
+//                                   \qty( \expval{U^\dag H U}{0} ) = $$
+//  $$ = \hat{e}_p \pdv{\theta_p} \qty( \delta_{i 1} U^\dag_{i u}
+//                                        H_{uk} U_{kj} \delta_{j1} ) $$
+//  $$ = \hat{e}_p \pdv{\theta_p} \qrt( U_{u1}^* H_{uk} U_{k1} )      $$
+//  $$ = \hat{e}_p \qty( H_{uk} \pdv{U_{u1}^*}{\theta_p} U_{k1} +
+//                           H_{uk} U_{u1}^* \pdv{U_{k1}}{\theta_p} ) $$
+//  $$ = \hat{e}_p H_{uk} \qty(
+//         \sum_{u=1}^{2^q} \sum_{k=1}^{2^q}
+//                               \qty(U_{k1} \pdv{U_{u1}^*}{\theta_p}) +
+//         \sum_{u=1}^{2^q} \sum_{k=1}^{2^q}
+//                           \qty(U_{u1} \pdv{U_{k1}^*}{\theta_p})^*) $$
+//  $$ = \hat{e}_p \qty(H_{uk} U_{k1} \pdv{U_{u1}^*}{\theta_p} +
+//                  + \qty(H_{uk} U_{k1} \pdv{U_{u1}^*}{\theta_p})^*) $$
+//  $$ = \hat{e}_p 2 \Re{ H_{uk} U_{k1} \pdv{U_{u1}^*}{\theta_p}}     $$
+//
+// We now approximate the original parameters as
+//            $\theta_i \approx (A_i + B_i)/2$ and
+//            $\pdv{U_{u1}}{\theta_p} \approx  (A_u - B_u)/(2 \Delta_i)$
+// and also note that, for a function f : (real --> complex),
+//            $\pdv{f^*}{x} = (\pdv{f}{x})^*$
+// so that
+//
+//  $$ = \hat{e}_p 2 \Re{ H_{uk} \qty(\frac{\vec{A} + \vec{B}}{2})_k
+//              \times \qty(\frac{\vec{A} - \vec{B}}{2 \Delta})_u^* } $$
+//  $$ = 1/2 \Delta^{-1} \cdot
+//                           \Re{ H_{uk} (A_k + B_k) (A_u^* - B_u^*)} $$
+//
+// Where we defined $ \Delta^{-1}: \Delta^{-1}_k = 1/\Delta_k$
+//
+//  $$ = 1/2 \Delta^{-1} \cdot \Re{ \sum_{u=1}^{2^q} \qty[
+//          \sum{k=1}^{u-1} \qty(H_{uk} (A_k + B_k)(A_u^* - B_u^*)) +
+//          \sum{k=u+1}^{2^q} \qty(H_{uk} (A_k + B_k) (A_u^* - B_u^*)) +
+//          H_{uu} (A_u + B_u) (A_u^* - B_u^*)]}                      $$
+//  $$ = 1/2 \Delta^{-1} \cdot \Re{
+//        \sum_{k=1}^{2^q} \sum{u>k}{2^q} \qty(
+//                                 H_{uk} (A_k + B_k)(A_u^* - B_u^*) ) +
+//        \sum_{k=1}^{2^q} \sum{u>k}{2^q} \qty(
+//                                 H_{uk} (A_k + B_k)(A_u^* - B_u^*) ) +
+//        \sum{u=1}^{2^q} \qty( H_{uu} (A_u + B_u)(A_u^* - B_u^*) )}  $$
+//  $$ = 1/2 \Delta^{-1} \cdot \Re{
+//        \sum_{k=1}^{2^q} \qty[ \sum{u>k}{2^q} \qty(
+//              H_{ku} (A_u + B_u} (A_k^* - B_k^*) +
+//              H_{uk} (A_k + B_k} (A_u^* - B_u^*)) +
+//        H_{uu} (A_u + B_u)(A_u^* - B_u^*) ]}                        $$
+//  $$ = 1/2 \Delta^{-1} \cdot \Re{ \sum_u \qty[ \sum_{k>u} \qty(
+//        (H_{uk}^* A_u A_k^* + (H_{uk}^* A_u A_k^*)^*) -
+//        (H_{uk}^* B_u B_k^* + (H_{uk}^* B_u B_k^*)^*) +
+//        (H_{uk}^* B_u A_k^* - (H_{uk}^* B_u A_k^*)^*) -
+//        (H_{uk}^* A_u B_k^* - (H_{uk}^* A_u B_k^*)^*) +
+//        (H_{uu} (A_u + B_u)(A_u^* - B_u^*)) ]}                      $$
+//  $$ = 1/2 \Delta^{-1} \sum_u \qty[ \sum_{k>u} \qty(
+//          2 \Re{H_{uk} A_u^* A_k} - 2 \Re{H_{uk} B_u^* B_k} +
+//          2i \Im{H_{uk}^* B_u A_k^*} - 2i \Im{H_{uk}^* A_u B_k^*} ) +
+//       + H_{uu} (A_u + B_u)(A_u^* - B_u^*) ]                        $$
+//
+// Yielding, finally,
+//
+// $$ \nabla_\Theta C = 1/2 \Delta^{-1} \cdot \sum_{u=1}^{2^q} \qty[
+//  \sum_{k = u+1}^{2^q} \qty( 2 \Re{H_{uk} (A_u^* A_k - B_u^* B_k)}) +
+//  \Re{ H_{uu} (A_u + B_u)(A_u^* - B_u^*) }]                         $$
 Result optimizer_optimize(Optimizer *optimizer) {
   const AdadeltaSettings ada_settings = optimizer->ada_settings;
   OptimizerSettings opt_settings = optimizer->opt_settings;
@@ -94,192 +241,199 @@ Result optimizer_optimize(Optimizer *optimizer) {
     return result_get_invalid_reason("optimizer is null");
   }
 
-  // Count the total number of parameters
-  //   This could be done (maybe) at the same time as another iteration
-  //   through `opt_settings.parameterization`, but since it's only ran
-  //   once (and not in the optimization cycle), the impact should be
-  //   minimal.
-  unsigned int param_count = 0;
+  // Count the number of parameters
+  // It isn't great to have a whole cycle just for this, but it's just
+  //  once in the optimization cycle...
+  unsigned int abs_param_count = 0;
   {
-    Iter params_iter = iter_create(opt_settings.parameterizations,
-                                   sizeof(GateParameterization),
-                                   opt_settings.parameterization_count);
-    Option next;
-    while ((next = iter_next(&params_iter)).some) {
-      param_count += ((GateParameterization *)next.data)->param_count;
+    unsigned int reparams_count = opt_settings.reparams_count;
+    for (unsigned int reparam_index = 0; reparam_index < reparams_count;
+         ++reparam_index) {
+      GateParameterization reparam = opt_settings.reparams[reparam_index];
+
+      for (unsigned int subparam_index = 0;
+           subparam_index < reparam.param_count; ++subparam_index) {
+        abs_param_count += 1;
+      }
     }
   }
 
-  //  Gradient squared accumulation variable
-  double acc_grad = 0;
-  //  Parameter update accumulation variable
-  double acc_dxsqr = 0;
-  //  Tolerance to maximum component of update to parameters
-  double max_grad = optimizer->opt_settings.stop_at + 1;
+  // Initialize the gradient array
+  // The parameters here are "flattened"
+  double param_gradient[abs_param_count];
+  memset(param_gradient, 0, sizeof(param_gradient));
 
-  // Buffers for simulation results at left and right
-  double _Complex left_buffer[state_size];
-  double _Complex right_buffer[state_size];
+  // (Absolute) Max known component of gradient
+  // used to terminate optimization cycle
+  double max_grad = opt_settings.stop_at + 1;
 
-  // Optimization loop
+  // Adadelta accumulation variables:
+  double grad_sqr_acc = 0;
+  double dx_sqr_acc = 0;
+
+  // Optimization cycle:
   while (max_grad > opt_settings.stop_at) {
-    // Offset all parameters to the left + reparameterize gates
+    // Compute an adadelta update
+
+    // Buffers to write the result of the simulation at left and right
+    // We don't need to initialize these right now because they're
+    //  always initialized to |0> just before simulation
+    double _Complex buff_left[state_size], buff_right[state_size];
+
+    // First loop, calculate gradient and gradient accumulation
     {
-      Iter params_iter = iter_create(opt_settings.parameterizations,
-                                     sizeof(GateParameterization),
-                                     opt_settings.parameterization_count);
-      Option next;
-      while ((next = iter_next(&params_iter)).some) {
-        GateParameterization *gate_param = (GateParameterization *)next.data;
-        Gate *gate = gate_param->gate;
+      // Gradient accumulation will be done component wise, so we factor
+      //  out the first term pre-component loop
+      grad_sqr_acc = ada_settings.rho * grad_sqr_acc;
 
-        for (unsigned int i = 0; i < gate_param->param_count; ++i) {
-          *(gate_param->params + i) -= *(gate_param->deltas + i);
-        }
+      // Flat index, to know what index of the gradient array to access
+      unsigned int flat_param_index = 0;
 
-        gate->reparamFn(&gate->matrix, gate_param->params);
-      }
-    }
-
-    // Run simulation @ left
-    {
-      memcpy(left_buffer, opt_settings.zero_state, sizeof(left_buffer));
-
-      Result run_r = circuit_run(circuit, &left_buffer);
-      if (!run_r.valid) {
-        return run_r;
-      }
-    }
-
-    // Offset all parameters to the right
-    // (de-offsetting the previous delta)
-    {
-      Iter params_iter = iter_create(opt_settings.parameterizations,
-                                     sizeof(GateParameterization),
-                                     opt_settings.parameterization_count);
-      Option next;
-      while ((next = iter_next(&params_iter)).some) {
-        GateParameterization *gate_param = (GateParameterization *)next.data;
-        Gate *gate = gate_param->gate;
-
-        for (unsigned int i = 0; i < gate_param->param_count; ++i) {
-          *(gate_param->params + i) += 2 * (*(gate_param->deltas + i));
-        }
-
-        gate->reparamFn(&gate->matrix, gate_param->params);
-      }
-    }
-
-    // Run simulation @ right
-    {
-      memcpy(right_buffer, opt_settings.zero_state, sizeof(right_buffer));
-      Result run_r = circuit_run(circuit, &right_buffer);
-      if (!run_r.valid) {
-        return run_r;
-      }
-    }
-
-    // Calculate gradient
-    double param_gradient[param_count];
-    {
-      double coef = 0.;
-      const unsigned int state_size = 1U << opt_settings.circuit->depth[0];
-      double _Complex *hamiltonian = opt_settings.hamiltonian;
-
-      // Calculate the common (double sum) coefficient
-      for (unsigned int i = 0; i < state_size; ++i) {
-        double _Complex left_i = left_buffer[i];
-        double _Complex right_i = right_buffer[i];
-
-        for (unsigned int j = i + 1; j < state_size; ++j) {
-          double _Complex hamilt_ij = *(hamiltonian + i * state_size + j);
-          double _Complex left_j = left_buffer[j];
-          double _Complex right_j = right_buffer[j];
-
-          coef += 2. * creal(hamilt_ij *
-                             (conj(right_i) * right_j - conj(left_i) * left_j));
-        }
-
-        double _Complex hamilt_ii = *(hamiltonian + i * state_size + i);
-        coef += creal(hamilt_ii * (right_i + left_i) * conj(right_i - left_i));
-      }
-
-      coef /= 2.;
-
-      // Set values of parameter gradient +
-      // accumulate gradient
-      acc_grad = ada_settings.rho * acc_grad;
-      unsigned int param_offset = 0;
-
-      for (unsigned int i = 0; i < param_count; ++i) {
-        // Calculate ith element of param gradient
-        GateParameterization *relevant_param =
-            opt_settings.parameterizations + param_offset;
-        double grad = coef / *(relevant_param->deltas + i - param_offset);
-
-        // Set values of parameter gradient
-        param_gradient[i] = grad;
-
-        // Accumulate gradient
-        acc_grad += (1 - ada_settings.rho) * pow(grad, 2);
-
-        // End of this parameter set?
-        if (i - param_offset == relevant_param->param_count) {
-          param_offset += 1;
-        }
-      }
-    }
-
-    // Update parameters
-    // + find largest update
-    // + accumulate updates
-    {
+      // Calculate also max grad
       max_grad = 0;
-      acc_dxsqr = ada_settings.rho * acc_dxsqr;
 
-      unsigned int param_arr_index_offset = 0;
-      Iter params_iter = iter_create(opt_settings.parameterizations,
-                                     sizeof(GateParameterization),
-                                     opt_settings.parameterization_count);
-      Option next;
-      while ((next = iter_next(&params_iter)).some) {
-        GateParameterization *gate_param = (GateParameterization *)next.data;
+      // Loop through all parameters...
+      for (unsigned int reparam_index = 0;
+           reparam_index < opt_settings.reparams_count; ++reparam_index) {
+        GateParameterization *reparam = opt_settings.reparams + reparam_index;
+        Gate *reparam_gate_ptr = reparam->gate;
 
-        for (unsigned int i = 0; i < gate_param->param_count; ++i) {
-          // The update to apply to the parameters
-          double update = -sqrt(acc_dxsqr + ada_settings.epsilon) /
-                          sqrt(acc_grad + ada_settings.epsilon) *
-                          param_gradient[param_arr_index_offset + i];
+        for (unsigned int subparam_index = 0;
+             subparam_index < reparam->param_count; ++subparam_index) {
+          double *param_ptr = reparam->params + subparam_index;
+          double delta = reparam->deltas[subparam_index];
 
-          // Remember to de-offset right shift
-          *(gate_param->params + i) += -(*(gate_param->deltas + i)) + update;
+          // Left shift
+          {
+            *param_ptr -= delta;
+            reparam_gate_ptr->reparamFn(&reparam_gate_ptr->matrix,
+                                        reparam->params);
 
-          // Save largest update
-          if (max_grad < fabs(update)) max_grad = fabs(update);
+            // Initialize left buffer to |0>
+            memcpy(buff_left, opt_settings.zero_state,
+                   sizeof(double _Complex) * state_size);
 
-          // Accumulate updates
-          acc_dxsqr += (1. - ada_settings.rho) * pow(update, 2);
+            // Simulate into left buffer
+            circuit_run(circuit, &buff_left);
+
+            // Undo shift
+            *param_ptr += delta;
+          }
+
+          // Right shift
+          {
+            *param_ptr += delta;
+            reparam_gate_ptr->reparamFn(&reparam_gate_ptr->matrix,
+                                        reparam->params);
+
+            // Initialize right buffer to |0>
+            memcpy(buff_right, opt_settings.zero_state,
+                   sizeof(double _Complex) * state_size);
+
+            // Simulate into right buffer
+            circuit_run(circuit, &buff_right);
+
+            // Undo right shift; reparameterize
+            *param_ptr -= delta;
+            reparam_gate_ptr->reparamFn(&reparam_gate_ptr->matrix,
+                                        reparam->params);
+          }
+
+          // Calculate this parameter's gradient component via the method
+          //  presented above.
+          double grad_component = 0;
+          {
+            for (unsigned int u = 0; u < state_size; ++u) {
+              double _Complex left_u = buff_left[u];
+              double _Complex right_u = buff_right[u];
+              double _Complex hamil_uu =
+                  opt_settings.hamiltonian[u * state_size + u];
+
+              for (unsigned int k = u + 1; k < state_size; ++k) {
+                // A 2D array cast to a single pointer results in a
+                // row major style ("rows side by side")
+                double _Complex hamil_uk =
+                    opt_settings.hamiltonian[u * state_size + k];
+                double _Complex left_k = buff_left[k];
+                double _Complex right_k = buff_right[k];
+
+                grad_component += creal(hamil_uk * (conj(right_u) * right_k -
+                                                    conj(left_u) * left_k));
+              }
+
+              grad_component += creal(hamil_uu * (right_u + left_u) *
+                                      conj(right_u - left_u)) /
+                                2.;
+
+              grad_component /= delta;
+            }
+          }
+
+          // Accumulate the gradient (component wise)
+          grad_sqr_acc += pow(grad_component, 2) * (1. - ada_settings.rho);
+
+          // Save the gradient
+          param_gradient[flat_param_index] = grad_component;
+          ++flat_param_index;
+
+          // Max grad?
+          if (fabs(grad_component) > max_grad) max_grad = fabs(grad_component);
+
+          // We need a full loop before applying the update, as the update
+          // depends on the complete value of grad_sqr_acc
         }
-
-        param_arr_index_offset += gate_param->param_count;
       }
     }
 
-    // Perform updates according to ADADELTA algorithm
-    acc_grad = ada_settings.rho * acc_grad;
+    // Store the dx_sqr_acc of the last full iteration loop, as
+    // this is needed to compute the update of all the variables;
+    // this allows to update the actual dx_sqr_acc as we update
+    // the variables, without affecting the update calculation
+    double old_dx_sqr_acc = dx_sqr_acc;
+
+    // Second parameter loop; now calculating & applying the update
+    {
+      // Same as gradient accumulation; factor out non-component term
+      dx_sqr_acc = ada_settings.rho * dx_sqr_acc;
+
+      // Flat index, to know what index of the gradient array to access
+      unsigned int flat_param_index = 0;
+
+      // Loop over parameters...
+      for (unsigned int reparam_index = 0;
+           reparam_index < opt_settings.reparams_count; ++reparam_index) {
+        GateParameterization reparam = opt_settings.reparams[reparam_index];
+        Gate *reparam_gate_ptr = reparam.gate;
+
+        for (unsigned int subparam_index = 0;
+             subparam_index < reparam.param_count; ++subparam_index) {
+          double *param_ptr = reparam.params + subparam_index;
+          double delta = reparam.deltas[subparam_index];
+
+          // Calculate update
+          double update = -sqrt(old_dx_sqr_acc + ada_settings.epsilon) /
+                          sqrt(grad_sqr_acc + ada_settings.epsilon) *
+                          param_gradient[flat_param_index];
+
+          // Accumulate dx component
+          dx_sqr_acc += (1. - ada_settings.rho) * pow(update, 2);
+
+          // Apply update!
+          *param_ptr += update;
+
+          // Flat index...
+          ++flat_param_index;
+        }
+      }
+    }
   }
 
-  // Update gates to match final parameters
-  {
-    Iter params_iter = iter_create(opt_settings.parameterizations,
-                                   sizeof(GateParameterization),
-                                   opt_settings.parameterization_count);
-    Option next;
-    while ((next = iter_next(&params_iter)).some) {
-      GateParameterization *gate_param = (GateParameterization *)next.data;
-      Gate *gate = gate_param->gate;
-      gate->reparamFn(&gate->matrix, gate_param->params);
-    }
+  // Done with optimization; reparameterize all gates so that they match
+  // last calculated parameters
+  for (unsigned int reparam_index = 0;
+       reparam_index < opt_settings.reparams_count; ++reparam_index) {
+    GateParameterization *param = opt_settings.reparams + reparam_index;
+    param->gate->reparamFn(&param->gate->matrix, param->params);
   }
 
   return result_get_empty_valid();

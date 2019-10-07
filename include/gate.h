@@ -17,12 +17,18 @@
 #include "include/option.h"
 
 // Macro to print the (complex) matrix of a `Gate` object, NumPy style.
-#define PRINT_GATE_MATRIX(GATE)                                        \
-  printf("[[%e+i*%e, %e+i*%e],\n [%e+i*%e, %e+i*%e]]\n",               \
+#define PRINT_GATE_MATRIX(GATE)                                \
+  printf("[[%e+i*%e, %e+i*%e],\n [%e+i*%e, %e+i*%e]]\n",       \
          creal(GATE->matrix[0][0]), cimag(GATE->matrix[0][0]), \
          creal(GATE->matrix[0][1]), cimag(GATE->matrix[0][1]), \
          creal(GATE->matrix[1][0]), cimag(GATE->matrix[1][0]), \
          creal(GATE->matrix[0][1]), cimag(GATE->matrix[0][1]));
+// Macro to print a complex 2x2 martix
+#define PRINT_MATRIX(MATRIX)                                                  \
+  printf("[[%e+i*%e, %e+i*%e],\n [%e+i*%e, %e+i*%e]]\n", creal(MATRIX[0][0]), \
+         cimag(MATRIX[0][0]), creal(MATRIX[0][1]), cimag(MATRIX[0][1]),       \
+         creal(MATRIX[1][0]), cimag(MATRIX[1][0]), creal(MATRIX[0][1]),       \
+         cimag(MATRIX[0][1]));
 
 // Gate identifier for human-readable or filtering purposes.
 typedef enum GateId {
@@ -101,10 +107,9 @@ Result gate_init_from_matrix(Gate *gate, double _Complex matrix[2][2],
 Result gate_init_from_identifier(Gate *gate, GateId identifier,
                                  double params[]);
 
-// Unwraps the result of a `gate_new_...` call; attempts to unwrap
-// the given `Result`; if successful, frees the heap memory of the data,
-// returning a stack copy of it.
-Gate gate_new_unwrap(Result result);
+// Clones one gate into another gate, with the guarantee that the copy is
+// deep.
+Result gate_clone(Gate *from, Gate *into);
 
 // Frees all of the heap memory internally allocated by the given `Gate`.
 // Note that this function does not free `gate` itself, as it cannot
