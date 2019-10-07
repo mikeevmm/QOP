@@ -140,7 +140,6 @@ Result optimizer_init(Optimizer *optimizer, OptimizerSettings opt_settings,
 // pass over the gates (since the above algorithm is phrased "vectorially",
 // while the programmatic approach is component-wise). Such compactions
 // are commented appropriately inline.
-// TODO: This is incorrect
 // The gradient calculation routine is as follows:
 //
 // 1. Offset each parameter $\theta_i$ by $+\Delta_i$, making the
@@ -186,51 +185,55 @@ Result optimizer_init(Optimizer *optimizer, OptimizerSettings opt_settings,
 //                  + \qty(H_{uk} U_{k1} \pdv{U_{u1}^*}{\theta_p})^*) $$
 //  $$ = \hat{e}_p 2 \Re{ H_{uk} U_{k1} \pdv{U_{u1}^*}{\theta_p}}     $$
 //
-// We now approximate the original parameters as
-//            $\theta_i \approx (A_i + B_i)/2$ and
-//            $\pdv{U_{u1}}{\theta_p} \approx  (A_u - B_u)/(2 \Delta_i)$
+// Letting $A^p$ and $B^p$ be the results to the right and left of
+// parameter $p$, respectively, we now approximate
+//        $U_{i1} \approx (A_i^p + B_i^p)/2$ and
+//        $\pdv{U_{u1}}{\theta_p} \approx  (A_u^p - B_u^p)/(2 \Delta_i)$
 // and also note that, for a function f : (real --> complex),
 //            $\pdv{f^*}{x} = (\pdv{f}{x})^*$
 // so that
 //
 //  $$ = \hat{e}_p 2 \Re{ H_{uk} \qty(\frac{\vec{A} + \vec{B}}{2})_k
 //              \times \qty(\frac{\vec{A} - \vec{B}}{2 \Delta})_u^* } $$
-//  $$ = 1/2 \Delta^{-1} \cdot
-//                           \Re{ H_{uk} (A_k + B_k) (A_u^* - B_u^*)} $$
+//  $$ = \Delta^{-1} \odot \hat{e}_p/2 \cdot
+//               \Re{ H_{uk} (A_k^p + B_k^p) ({A_u^p}^* - {B_u^p}^*)} $$
 //
 // Where we defined $ \Delta^{-1}: \Delta^{-1}_k = 1/\Delta_k$
+// (Hereafter suppressing the $p$ supraindex in $A$ and $B$)
 //
-//  $$ = 1/2 \Delta^{-1} \cdot \Re{ \sum_{u=1}^{2^q} \qty[
+//  $$ = \Delta^{-1} \odot \hat{e}_p/2 \Re{ \sum_{u=1}^{2^q} \qty[
 //          \sum{k=1}^{u-1} \qty(H_{uk} (A_k + B_k)(A_u^* - B_u^*)) +
 //          \sum{k=u+1}^{2^q} \qty(H_{uk} (A_k + B_k) (A_u^* - B_u^*)) +
 //          H_{uu} (A_u + B_u) (A_u^* - B_u^*)]}                      $$
-//  $$ = 1/2 \Delta^{-1} \cdot \Re{
+//  $$ = \Delta^{-1} \odot \hat{e}_p/2 \cdot \Re{
 //        \sum_{k=1}^{2^q} \sum{u>k}{2^q} \qty(
 //                                 H_{uk} (A_k + B_k)(A_u^* - B_u^*) ) +
 //        \sum_{k=1}^{2^q} \sum{u>k}{2^q} \qty(
 //                                 H_{uk} (A_k + B_k)(A_u^* - B_u^*) ) +
 //        \sum{u=1}^{2^q} \qty( H_{uu} (A_u + B_u)(A_u^* - B_u^*) )}  $$
-//  $$ = 1/2 \Delta^{-1} \cdot \Re{
+//  $$ = \Delta^{-1} \odot \hat{e}_p/2 \cdot \Re{
 //        \sum_{k=1}^{2^q} \qty[ \sum{u>k}{2^q} \qty(
 //              H_{ku} (A_u + B_u} (A_k^* - B_k^*) +
 //              H_{uk} (A_k + B_k} (A_u^* - B_u^*)) +
 //        H_{uu} (A_u + B_u)(A_u^* - B_u^*) ]}                        $$
-//  $$ = 1/2 \Delta^{-1} \cdot \Re{ \sum_u \qty[ \sum_{k>u} \qty(
-//        (H_{uk}^* A_u A_k^* + (H_{uk}^* A_u A_k^*)^*) -
-//        (H_{uk}^* B_u B_k^* + (H_{uk}^* B_u B_k^*)^*) +
-//        (H_{uk}^* B_u A_k^* - (H_{uk}^* B_u A_k^*)^*) -
-//        (H_{uk}^* A_u B_k^* - (H_{uk}^* A_u B_k^*)^*) +
-//        (H_{uu} (A_u + B_u)(A_u^* - B_u^*)) ]}                      $$
-//  $$ = 1/2 \Delta^{-1} \sum_u \qty[ \sum_{k>u} \qty(
+//  $$ = \Delta^{-1} \odot \hat{e}_p/2 \cdot
+//        \Re{ \sum_u \qty[ \sum_{k>u} \qty(
+//          (H_{uk}^* A_u A_k^* + (H_{uk}^* A_u A_k^*)^*) -
+//          (H_{uk}^* B_u B_k^* + (H_{uk}^* B_u B_k^*)^*) +
+//          (H_{uk}^* B_u A_k^* - (H_{uk}^* B_u A_k^*)^*) -
+//          (H_{uk}^* A_u B_k^* - (H_{uk}^* A_u B_k^*)^*) +
+//          (H_{uu} (A_u + B_u)(A_u^* - B_u^*)) ]}                    $$
+//  $$ = \Delta^{-1} \odot \hat{e}_p/2  \sum_u \qty[ \sum_{k>u} \qty(
 //          2 \Re{H_{uk} A_u^* A_k} - 2 \Re{H_{uk} B_u^* B_k} +
 //          2i \Im{H_{uk}^* B_u A_k^*} - 2i \Im{H_{uk}^* A_u B_k^*} ) +
 //       + H_{uu} (A_u + B_u)(A_u^* - B_u^*) ]                        $$
 //
 // Yielding, finally,
 //
-// $$ \nabla_\Theta C = 1/2 \Delta^{-1} \cdot \sum_{u=1}^{2^q} \qty[
-//  \sum_{k = u+1}^{2^q} \qty( 2 \Re{H_{uk} (A_u^* A_k - B_u^* B_k)}) +
-//  \Re{ H_{uu} (A_u + B_u)(A_u^* - B_u^*) }]                         $$
+// $$ \nabla_\Theta C = \Delta^{-1} \odot \hat{e}_p/2
+//  \sum_{u=1}^{2^q} \qty[
+//  \sum_{k = u+1}^{2^q} \qty( 2 \Re{H_{uk} ({A_u^p}^* {A_k^p} - {B_u^p}^*
+//  {B_k^p})}) + \Re{ H_{uu} ({A_u^p} + {B_u^p})({A_u^p}^* - {B_u^p}^*) }] $$
 Result optimizer_optimize(Optimizer *optimizer) {
   const AdadeltaSettings ada_settings = optimizer->ada_settings;
   OptimizerSettings opt_settings = optimizer->opt_settings;
