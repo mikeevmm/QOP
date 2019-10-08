@@ -3,16 +3,21 @@ DBG = gdb
 
 SRC_DIR = src
 OBJ_DIR = obj
+PYTHON_DIR = python
 
 SRC = $(wildcard $(SRC_DIR)/*.c)
 OBJ = $(SRC:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 
-CPPFLAGS += -Iinclude/..
+CPPFLAGS += -Iinclude/.. 
 CDBGFLAGS = -g -O0
 CRLSFLAGS = -O3
 CFLAGS += -Wall -Wextra -Wconversion -Wno-unused -pedantic
 LDFLAGS += -Llib
 LDLIBS += -lm
+
+ifndef no_user
+PYFLAGS = --user
+endif
 
 all: release
 
@@ -43,5 +48,9 @@ debug:
 check:
 	make all
 	valgrind --leak-check=full ./$(EXE)
+
+python: $(SRC_DIR)/*.c $(PYTHON_DIR)/*.c
+	python3 buildext.py build
+	python3 buildext.py install $(PYFLAGS)
 
 .PHONY: all clean
