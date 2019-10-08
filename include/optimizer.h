@@ -137,6 +137,7 @@ typedef struct OptimizationResult {
 } OptimizationResult;
 
 Result optimization_result_as_result(OptimizationResult opt_result);
+OptimizationResult result_as_optimization_result(Result result);
 
 // Performs the optimization itself.
 // The final (optimized) parameters are stored in the

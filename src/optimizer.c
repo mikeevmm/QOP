@@ -100,13 +100,6 @@ void optimizer_settings_free(OptimizerSettings *opt_settings) {
   free(opt_settings->zero_state);
 }
 
-Result optimization_result_as_result(OptimizationResult opt_result) {
-  Result cast;
-  cast.valid = opt_result.valid;
-  cast.content = opt_result.content;
-  return cast;
-}
-
 // Initializes a new `Optimizer` object.
 // This is just a glorified (`OptimizerSettings`, `AdadeltaSettings`)
 // pair.
@@ -115,6 +108,20 @@ Result optimizer_init(Optimizer *optimizer, OptimizerSettings opt_settings,
   optimizer->opt_settings = opt_settings;
   optimizer->ada_settings = ada_settings;
   return result_get_empty_valid();
+}
+
+Result optimization_result_as_result(OptimizationResult opt_result) {
+  Result cast;
+  cast.valid = opt_result.valid;
+  cast.content = opt_result.content;
+  return cast;
+}
+
+OptimizationResult result_as_optimization_result(Result result) {
+  OptimizationResult cast;
+  cast.content = result.content;
+  cast.valid = result.valid;
+  return cast;
 }
 
 // Performs the actual optimization of the parameters pointed to in the
@@ -251,7 +258,7 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
 
   if (optimizer == NULL) {
     Result invalid_result = result_get_invalid_reason("optimizer is null");
-    return *(OptimizationResult *)&invalid_result;
+    return result_as_optimization_result(invalid_result);
   }
 
   // Count the number of parameters
