@@ -33,7 +33,13 @@ Result vector_resize(Vector *v, size_t size) {
     size_t new_capacity = (v->capacity == 0 ? 1 : v->capacity);
     while (new_capacity < size) new_capacity <<= 1;
 
-    void *resized = realloc(v->data, new_capacity * v->obj_size);
+    void *resized;
+    {
+      if (v->data == NULL)
+        resized = malloc(new_capacity * v->obj_size);
+      else
+        resized = realloc(v->data, new_capacity * v->obj_size);
+    }
     if (resized == NULL) {
       return result_get_invalid_reason(
           "could not resize vector; realloc failed");
@@ -46,7 +52,13 @@ Result vector_resize(Vector *v, size_t size) {
     size_t new_capacity = (v->capacity == 0 ? 1 : v->capacity);
     while (new_capacity / 2 > size) new_capacity >>= 1;
 
-    void *resized = realloc(v->data, new_capacity * v->obj_size);
+    void *resized;
+    {
+      if (v->data == NULL)
+        resized = malloc(new_capacity * v->obj_size);
+      else
+        resized = realloc(v->data, new_capacity * v->obj_size);
+    }
     if (!resized) {
       return result_get_invalid_reason(
           "could not resize vector; realloc failed");
