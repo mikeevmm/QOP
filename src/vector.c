@@ -47,29 +47,35 @@ Result vector_resize(Vector *v, size_t size) {
     v->data = resized;
     v->capacity = new_capacity;
     return result_get_valid_with_data(v);
-  } else /* if (size <= v->capacity / 2) */
-  {
+  } else if (size <= v->capacity / 2) {
     size_t new_capacity = (v->capacity == 0 ? 1 : v->capacity);
     while (new_capacity / 2 > size) new_capacity >>= 1;
 
     void *resized;
-    {
-      if (v->data == NULL)
-        resized = malloc(new_capacity * v->obj_size);
-      else
-        resized = realloc(v->data, new_capacity * v->obj_size);
-    }
-    if (!resized) {
-      return result_get_invalid_reason(
-          "could not resize vector; realloc failed");
+    if (new_capacity == 0) {
+      free(v->data);
+      resized = NULL;
+    } else {
+      {
+        if (v->data == NULL)
+          resized = malloc(new_capacity * v->obj_size);
+        else
+          resized = realloc(v->data, new_capacity * v->obj_size);
+      }
+      if (!resized) {
+        return result_get_invalid_reason(
+            "could not resize vector; realloc failed");
+      }
     }
     v->data = resized;
     v->capacity = new_capacity;
     return result_get_valid_with_data(v);
+  } else {  // Already at good size
+    return result_get_valid_with_data(v);
   }
 }
 
-Result vector_push(Vector *v, void *object) {
+Result vector_push(Vector *v, void *object_ptr) {
   if (!v->init) {
     return result_get_invalid_reason("tried to push to uninitialized vector");
   }
@@ -80,12 +86,12 @@ Result vector_push(Vector *v, void *object) {
       return resize;
     }
   }
-  return vector_raw_push(v, object);
+  return vector_raw_push(v, object_ptr);
 }
 
-Result vector_raw_push(Vector *v, void *object) {
+Result vector_raw_push(Vector *v, void *object_ptr) {
   void *moved =
-      memcpy((char *)v->data + v->obj_size * v->size, object, v->obj_size);
+      memcpy((char *)v->data + v->obj_size * v->size, object_ptr, v->obj_size);
   if (!moved) {
     return result_get_invalid_reason("could not memcpy");
   }
