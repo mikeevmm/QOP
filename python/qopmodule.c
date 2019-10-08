@@ -53,8 +53,9 @@ static PyObject *qop_create_circuit(PyTypeObject *type, PyObject *args,
     int signed_qubit_count;
     char *kwarg_names[] = {"qubits", NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "i", kwarg_names,
-                                     &signed_qubit_count))
+                                     &signed_qubit_count)) {
       return NULL;
+    }
     if (signed_qubit_count < 0) {
       PyErr_SetString(PyExc_ValueError, "qubit count cannot be negative");
       return NULL;
@@ -105,7 +106,7 @@ static PyObject *qop_create_gate(PyTypeObject *type, PyObject *args,
                                    &params_optional)) {
     PyErr_SetString(PyExc_ValueError,
                     "could not parse arguments; "
-                    "expecting {identifier, matrix?, parameters?}");
+                    "expecting (identifier, matrix?, parameters?)");
     return NULL;
   }
 
@@ -145,6 +146,7 @@ static PyObject *qop_create_gate(PyTypeObject *type, PyObject *args,
   }
 
   Gate gate;
+  double *params = NULL;
   {
     Result init_result;
 
@@ -198,7 +200,14 @@ static PyObject *qop_create_gate(PyTypeObject *type, PyObject *args,
           return NULL;
         }
 
-        double params[1];
+        {
+          void *mem = malloc(sizeof(double) * 1);
+          if (mem == NULL) {
+            PyErr_NoMemory();
+            return NULL;
+          }
+          params = (double *)mem;
+        }
         memcpy(params, PyArray_DATA(params_array), sizeof(double) * 1);
 
         init_result = gate_init_from_identifier(&gate, id, params);
@@ -222,6 +231,7 @@ static PyObject *qop_create_gate(PyTypeObject *type, PyObject *args,
   }
 
   self->gate = gate;
+  self->params = params;
   return (PyObject *)self;
 }
 
@@ -257,7 +267,7 @@ static PyObject *qop_circuit_add_gate(QopCircuitObject *self, PyObject *args,
     control_opt = option_from_uint((unsigned int)control);
 
   {
-    // No not Py_INCREF gate! It seems like it's already done.
+    // No not Py_INCREF gate! It seems like it's already done???
     Result add_r = circuit_add_gate(&self->circuit, &gate_obj->gate,
                                     (unsigned int)qubit, control_opt);
     if (!add_r.valid) {
@@ -277,33 +287,329 @@ static PyObject *qop_circuit_add_gate(QopCircuitObject *self, PyObject *args,
     }
   }
 
-  return (PyObject *)self;
+  Py_INCREF(Py_None);
+  return Py_None;
 }
 
 static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
                                       PyObject *kwds) {
   PyDictObject *settings = NULL;
-  char *kwarg_names[] = {"settings", NULL};
-  if (!PyArg_ParseTupleAndKeywords(args, kwds, "|O!", kwarg_names, &PyDict_Type,
-                                   &settings)) {
+  PyObject *hamiltonian_arg;
+  char *kwarg_names[] = {"hamiltonian", "settings", NULL};
+  if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|O!", kwarg_names,
+                                   &hamiltonian_arg, &PyDict_Type, &settings)) {
     PyErr_SetString(PyExc_ValueError,
-                    "could not parse arguments to circuit optimization");
+                    "could not parse arguments to circuit optimization; "
+                    "expected {hamiltonian, settings?}");
     return NULL;
   }
 
+  PyArrayObject *hamiltonian_arr;
+  {
+    PyObject *from_obj =
+        PyArray_FROMANY(hamiltonian_arg, NPY_CDOUBLE, 2, 2,
+                        NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_ALIGNED);
+    if (from_obj == NULL) {
+      PyErr_SetString(PyExc_ValueError,
+                      "could not interpret hamiltonian as matrix");
+      return NULL;
+    }
+    hamiltonian_arr = (PyArrayObject *)from_obj;
+  }
+  if (PyArray_NDIM(hamiltonian_arr) != 2 ||
+      PyArray_DIMS(hamiltonian_arr)[0] != PyArray_DIMS(hamiltonian_arr)[1]) {
+    PyErr_SetString(PyExc_ValueError,
+                    "hamiltonian is malformed; must be square 2D array");
+    Py_DECREF(hamiltonian_arr);
+    return NULL;
+  }
+
+  // Default settings; to be possibly changed using user-supplied
+  // dictionary
   AdadeltaSettings ada_settings = optimizer_adadelta_get_default();
+  double stop_at = 1e-6;
+  Vector reparams_vec;
+  vector_init(&reparams_vec, sizeof(GateParameterization), 0);
+  bool any_reparam_given = false;
+  int max_iters = -1;
 
+  /*
+    {
+      'ada': {
+        'rho': val,
+        'epsilon': val
+      },
+      'optimize':
+      {
+        'gates': [ val, val, ... ],
+        'deltas': [ [val], [val, val], ... ],
+        'stop_at': val,
+        'max_iterations': val
+      }
+    }
+  */
+  // Parsing of options dictionary
   if (settings != NULL) {
-    PyDictObject *ada_settings =
-        (PyDictObject *)PyDict_GetItemString(settings, "ada");
-    if (ada_settings != NULL) {
+    if (!PyDict_Check(settings)) {
+      PyErr_SetString(PyExc_ValueError, "settings object must be a dictionary");
+      vector_free(&reparams_vec);
+      Py_DECREF(hamiltonian_arr);
+      return NULL;
+    }
 
+    PyObject *ada_dict = PyDict_GetItemString((PyObject *)settings, "ada");
+    if (!PyDict_Check(ada_dict)) {
+      PyErr_SetString(PyExc_ValueError,
+                      "settings:ada object must be a dictionary");
+      vector_free(&reparams_vec);
+      Py_DECREF(hamiltonian_arr);
+      return NULL;
+    }
+
+    if (ada_dict != NULL) {
+      PyObject *rho = PyDict_GetItemString(ada_dict, "rho");
+      if (rho != NULL) {
+        if (!PyFloat_Check(rho)) {
+          PyErr_SetString(PyExc_ValueError,
+                          "settings:ada:rho object must be a number");
+          vector_free(&reparams_vec);
+          Py_DECREF(hamiltonian_arr);
+          return NULL;
+        }
+        ada_settings.rho = PyFloat_AsDouble(rho);
+      }
+
+      PyObject *epsilon = PyDict_GetItemString(ada_dict, "epsilon");
+      if (epsilon != NULL) {
+        if (!PyNumber_Check(epsilon)) {
+          PyErr_SetString(PyExc_ValueError,
+                          "settings:ada:epsilon object must be a number");
+          vector_free(&reparams_vec);
+          Py_DECREF(hamiltonian_arr);
+          return NULL;
+        }
+        ada_settings.epsilon = PyFloat_AsDouble(epsilon);
+      }
+    }
+
+    PyObject *opt_dict = PyDict_GetItemString((PyObject *)settings, "optimize");
+    if (!PyDict_Check(opt_dict)) {
+      PyErr_SetString(PyExc_ValueError,
+                      "settings:optimize object must be a dictionary");
+      vector_free(&reparams_vec);
+      Py_DECREF(hamiltonian_arr);
+      return NULL;
+    }
+
+    if (opt_dict != NULL) {
+      PyObject *deltas = PyDict_GetItemString(opt_dict, "deltas");
+      if (deltas != NULL) {
+        if (!PyIter_Check(deltas)) {
+          PyErr_SetString(PyExc_ValueError,
+                          "settings:optimize:deltas object must be iterable");
+          vector_free(&reparams_vec);
+          Py_DECREF(hamiltonian_arr);
+          return NULL;
+        }
+      }
+
+      PyObject *gates = PyDict_GetItemString(opt_dict, "gates");
+
+      if ((gates != NULL) ^ (deltas != NULL)) {
+        PyErr_SetString(PyExc_ValueError,
+                        "settings:optimize:deltas and settings:optimize:gates "
+                        "must both be defined or undefined");
+        vector_free(&reparams_vec);
+        Py_DECREF(hamiltonian_arr);
+        return NULL;
+      }
+
+      if (gates != NULL) {
+        if (!PyIter_Check(gates)) {
+          PyErr_SetString(PyExc_ValueError,
+                          "settings:optimize:gates object must be iterable");
+          vector_free(&reparams_vec);
+          Py_DECREF(hamiltonian_arr);
+          return NULL;
+        }
+
+        // Do not reparameterize any gate, even if the following iterators
+        // are empty
+        any_reparam_given = true;
+
+        PyObject *next_gate;
+        PyObject *next_deltas;
+        while ((next_gate = PyIter_Next(gates)) != NULL) {
+          next_deltas = PyIter_Next(deltas);
+          if (next_deltas == NULL) {
+            PyErr_SetString(PyExc_ValueError,
+                            "size mismatch between settings:optimize:gates and "
+                            "settings:optimize:deltas");
+            vector_free(&reparams_vec);
+            Py_DECREF(hamiltonian_arr);
+            return NULL;
+          }
+
+          if (Py_TYPE(next_gate) != &QopGateType) {
+            PyErr_SetString(PyExc_ValueError,
+                            "settings:optimize:gates:element must be qop.Gate");
+            vector_free(&reparams_vec);
+            Py_DECREF(hamiltonian_arr);
+            return NULL;
+          }
+
+          if (!PyIter_Check(next_deltas)) {
+            PyErr_SetString(
+                PyExc_ValueError,
+                "settings:optimize:deltas:element must be iterable ");
+            vector_free(&reparams_vec);
+            Py_DECREF(hamiltonian_arr);
+            return NULL;
+          }
+
+          Vector deltas;
+          vector_init(&deltas, sizeof(double), 1);
+          {
+            PyObject *next_delta;
+            while ((next_delta = PyIter_Next(next_deltas)) != NULL) {
+              double delta = PyFloat_AsDouble(next_delta);
+              Result push_result = vector_push(&deltas, &delta);
+              if (!push_result.valid) {
+                PyErr_SetString(QopError,
+                                push_result.content.error_details.reason);
+                {
+                  Iter reparam_iter = vector_iter_create(&reparams_vec);
+                  Option next;
+                  while ((next = iter_next(&reparam_iter)).some) {
+                    optimizer_gate_param_free(
+                        *(GateParameterization **)next.data);
+                  }
+                  vector_free(&reparams_vec);
+                }
+                vector_free(&deltas);
+                Py_DECREF(hamiltonian_arr);
+                return NULL;
+              }
+            }
+          }
+
+          QopGateObject *gate = (QopGateObject *)next_gate;
+          GateParameterization param;
+          optimizer_gate_param_init(&param, &gate->gate, deltas.size,
+                                    gate->params, deltas.data);
+          vector_push(&reparams_vec, &param);
+          vector_free(&deltas);
+        }
+      }
+
+      PyObject *stop_at_obj = PyDict_GetItemString(opt_dict, "stop_at");
+      if (stop_at_obj != NULL) {
+        if (!PyNumber_Check(stop_at_obj)) {
+          PyErr_SetString(PyExc_ValueError,
+                          "settings:optimize:stop_at object must be a number");
+          {
+            Iter reparam_iter = vector_iter_create(&reparams_vec);
+            Option next;
+            while ((next = iter_next(&reparam_iter)).some) {
+              optimizer_gate_param_free(*(GateParameterization **)next.data);
+            }
+            vector_free(&reparams_vec);
+          }
+          Py_DECREF(hamiltonian_arr);
+          return NULL;
+        }
+
+        stop_at = PyFloat_AsDouble(stop_at_obj);
+      }
+
+      PyObject *max_iters_obj =
+          PyDict_GetItemString(opt_dict, "max_iterations");
+      if (max_iters_obj != NULL) {
+        if (!PyNumber_Check(max_iters_obj)) {
+          PyErr_SetString(
+              PyExc_ValueError,
+              "settings:optimize:max_iterations object must be a number");
+          vector_free(&reparams_vec);
+          Py_DECREF(hamiltonian_arr);
+          return NULL;
+        }
+
+        max_iters = (int)PyFloat_AsDouble(max_iters_obj);
+      }
     }
   }
+
+  if (!any_reparam_given) {
+    // Generate a reparam for all known parameterized gates in the
+    // circuit
+    Iter known_gates_iter = vector_iter_create(&self->gate_obj_refs);
+    Option next;
+    while ((next = iter_next(&known_gates_iter)).some) {
+      QopGateObject *qop_gate = *(QopGateObject **)next.data;
+      switch (qop_gate->gate.id) {
+        case GateRx:
+        case GateRy:
+        case GateRz: {
+          GateParameterization param;
+          double delta[] = {1e-2};  // ~1/pi rad
+          optimizer_gate_param_init(&param, &qop_gate->gate, 1,
+                                    qop_gate->params, delta);
+          vector_push(&reparams_vec, &param);
+        } break;
+        default:
+          continue;
+      }
+    }
+  }
+
+  if (reparams_vec.size == 0) {
+    PyErr_SetString(QopError, "nothing to optimize");
+    vector_free(&reparams_vec);
+    Py_DECREF(hamiltonian_arr);
+    return NULL;
+  }
+
+  OptimizerSettings opt_settings;
+  optimizer_settings_init(&opt_settings, &self->circuit,
+                          PyArray_DATA(hamiltonian_arr), stop_at,
+                          reparams_vec.data, reparams_vec.size, max_iters);
+
+  // Perform optimization
+  Optimizer optimizer;
+  optimizer_init(&optimizer, opt_settings, ada_settings);
+  optimizer_optimize(&optimizer);
+
+  // Free python objects
+  Py_DECREF(hamiltonian_arr);
+
+  // Free optimizer settings
+  optimizer_settings_free(&opt_settings);
+
+  // Free gate parameterizations, but saving the results
+  PyListObject *result_list = (PyListObject *)PyList_New(0);
+  {
+    Iter reparam_iter = vector_iter_create(&reparams_vec);
+    Option next;
+    while ((next = iter_next(&reparam_iter)).some) {
+      GateParameterization *param = (GateParameterization *)next.data;
+
+      PyObject *params_sublist = PyList_New(param->param_count);
+      for (unsigned int i = 0; i < param->param_count; ++i) {
+        PyFloatObject *param_value =
+            (PyFloatObject *)PyFloat_FromDouble(*(param->params + i));
+        PyList_Append((PyObject *)params_sublist, (PyObject *)param_value);
+      }
+      PyList_Append((PyObject *)result_list, (PyObject *)params_sublist);
+
+      optimizer_gate_param_free(param);
+    }
+    vector_free(&reparams_vec);
+  }
+
+  return (PyObject *)result_list;
 }
 
 static void qop_circuit_obj_dealloc(QopCircuitObject *self) {
-  printf("dealoc circuit\n");
   circuit_free(&self->circuit);
   {
     Iter refs_iter = vector_iter_create(&self->gate_obj_refs);
@@ -318,7 +624,7 @@ static void qop_circuit_obj_dealloc(QopCircuitObject *self) {
 }
 
 static void qop_gate_obj_dealloc(QopGateObject *self) {
-  printf("dealoc gate\n");
   gate_free(&self->gate);
+  free(self->params);
   Py_TYPE(self)->tp_free((PyObject *)self);
 }

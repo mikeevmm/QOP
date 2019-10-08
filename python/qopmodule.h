@@ -25,6 +25,7 @@ typedef struct QopCircuitObject {
 
 typedef struct QopGateObject {
   PyObject_HEAD Gate gate;
+  double *params;
 } QopGateObject;
 
 static PyObject *qop_create_circuit(PyTypeObject *type, PyObject *args,
@@ -53,7 +54,8 @@ static PyMethodDef qop_circuit_obj_methods[] = {
     {NULL}};
 
 static PyTypeObject QopCircuitType = {
-    PyVarObject_HEAD_INIT(NULL, 0).tp_name = "qop.Circuit",
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "qop.Circuit",
     .tp_doc = "A quantum circuit.",
     .tp_basicsize = sizeof(QopCircuitObject),
     .tp_itemsize = 0,
@@ -65,7 +67,8 @@ static PyTypeObject QopCircuitType = {
 };
 
 static PyTypeObject QopGateType = {
-    PyVarObject_HEAD_INIT(NULL, 0).tp_name = "qop.Gate",
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "qop.Gate",
     .tp_doc = "A quantum gate.",
     .tp_basicsize = sizeof(QopGateObject),
     .tp_itemsize = 0,
