@@ -74,6 +74,7 @@ typedef struct OptimizerSettings {
   unsigned int reparams_count;
   GateParameterization *reparams;
   double _Complex *zero_state;  // The |000...> state of the circuit
+  int max_iterations;
 } OptimizerSettings;
 
 // Initializes a new `OptimizerSettings` object.
@@ -95,11 +96,14 @@ typedef struct OptimizerSettings {
 // Also note that the `reparams` array should be kept in scope/
 // in memory, since `GateParameterizations` are modified in place during
 // optimization.
+// If no maximum number of iterations in the optimization cycle is to be
+// considered, pass `-1` as the `max_iterations` argument.
 Result optimizer_settings_init(OptimizerSettings *opt_settings,
                                Circuit *circuit, double _Complex *hamiltonian,
                                double stop_at,
                                GateParameterization *parameterizations,
-                               unsigned int parameterizations_count);
+                               unsigned int parameterizations_count,
+                               int max_iterations);
 
 // Frees the internal memory allocated at the initialization of the
 // given `OptimizerSettings` object.

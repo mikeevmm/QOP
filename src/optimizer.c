@@ -57,7 +57,8 @@ Result optimizer_settings_init(OptimizerSettings *opt_settings,
                                Circuit *circuit, double _Complex *hamiltonian,
                                double stop_at,
                                GateParameterization *parameterizations,
-                               unsigned int parameterizations_count) {
+                               unsigned int parameterizations_count,
+                               int max_iterations) {
   if (opt_settings == NULL)
     return result_get_invalid_reason("given OptmizerSettings* is null");
   if (circuit == NULL)
@@ -88,6 +89,7 @@ Result optimizer_settings_init(OptimizerSettings *opt_settings,
   opt_settings->reparams = parameterizations;
   opt_settings->reparams_count = parameterizations_count;
   opt_settings->zero_state = zero_state;
+  opt_settings->max_iterations = max_iterations;
 
   return result_get_valid_with_data(opt_settings);
 }
@@ -274,8 +276,18 @@ Result optimizer_optimize(Optimizer *optimizer) {
   double grad_sqr_acc = 0;
   double dx_sqr_acc = 0;
 
+  // Iteration count; this will only be useful if there is a max
+  // iteration count allowd
+  unsigned long int iter_count = 0;
+
   // Optimization cycle:
   while (max_grad > opt_settings.stop_at) {
+    // Max iteration?
+    if (opt_settings.max_iterations >= 0) {
+      iter_count++;
+      if (iter_count >= opt_settings.max_iterations) break;
+    }
+
     // Compute an adadelta update
 
     // Buffers to write the result of the simulation at left and right
@@ -406,12 +418,10 @@ Result optimizer_optimize(Optimizer *optimizer) {
       for (unsigned int reparam_index = 0;
            reparam_index < opt_settings.reparams_count; ++reparam_index) {
         GateParameterization reparam = opt_settings.reparams[reparam_index];
-        Gate *reparam_gate_ptr = reparam.gate;
 
         for (unsigned int subparam_index = 0;
              subparam_index < reparam.param_count; ++subparam_index) {
           double *param_ptr = reparam.params + subparam_index;
-          double delta = reparam.deltas[subparam_index];
 
           // Calculate update
           double update = -sqrt(old_dx_sqr_acc + ada_settings.epsilon) /

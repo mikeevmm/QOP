@@ -66,7 +66,7 @@ int main(void) {
                                          {0., 0., 0., -1.}};
     result_unwrap(optimizer_settings_init(
         &opt_settings, &circuit, (double _Complex *)hamiltonian, 1e-8,
-        all_params, sizeof(all_params) / sizeof(GateParameterization)));
+        all_params, sizeof(all_params) / sizeof(GateParameterization), -1));
   }
   result_unwrap(optimizer_init(&optimizer, opt_settings, ada_default));
 
