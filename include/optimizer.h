@@ -124,10 +124,26 @@ typedef struct Optimizer {
 Result optimizer_init(Optimizer *optimizer, OptimizerSettings opt_settings,
                       AdadeltaSettings ada_settings);
 
+// Information about the results of an optimization.
+// The structure is that of a simple `Result`, with extra fields specific
+// to optimization at the end. This allows for casting to/from the `Result`
+// struct, which may be useful for, e.g., returning an invalid result.
+// The preferred way to perform this cast is via the
+// `optimization_result_as_result()` function.
+typedef struct OptimizationResult {
+  bool valid;
+  union ResultContent content;
+  bool quit_on_max_iter;
+} OptimizationResult;
+
+Result optimization_result_as_result(OptimizationResult opt_result);
+
 // Performs the optimization itself.
 // The final (optimized) parameters are stored in the
 // `GateParameterization` objects that were passed to the
-// `OptimizerSettings` at initialization.
-Result optimizer_optimize(Optimizer *optimizer);
+// `OptimizerSettings` at initialization, and information
+// about the optimization process is returned in the form
+// of an `OpimizationResult` object.
+OptimizationResult optimizer_optimize(Optimizer *optimizer);
 
 #endif  // QOP_OPTIMIZER_H_

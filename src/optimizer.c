@@ -100,6 +100,13 @@ void optimizer_settings_free(OptimizerSettings *opt_settings) {
   free(opt_settings->zero_state);
 }
 
+Result optimization_result_as_result(OptimizationResult opt_result) {
+  Result cast;
+  cast.valid = opt_result.valid;
+  cast.content = opt_result.content;
+  return cast;
+}
+
 // Initializes a new `Optimizer` object.
 // This is just a glorified (`OptimizerSettings`, `AdadeltaSettings`)
 // pair.
@@ -236,14 +243,15 @@ Result optimizer_init(Optimizer *optimizer, OptimizerSettings opt_settings,
 //  \sum_{u=1}^{2^q} \qty[
 //  \sum_{k = u+1}^{2^q} \qty( 2 \Re{H_{uk} ({A_u^p}^* {A_k^p} - {B_u^p}^*
 //  {B_k^p})}) + \Re{ H_{uu} ({A_u^p} + {B_u^p})({A_u^p}^* - {B_u^p}^*) }] $$
-Result optimizer_optimize(Optimizer *optimizer) {
+OptimizationResult optimizer_optimize(Optimizer *optimizer) {
   const AdadeltaSettings ada_settings = optimizer->ada_settings;
   OptimizerSettings opt_settings = optimizer->opt_settings;
   Circuit *circuit = opt_settings.circuit;
   const unsigned int state_size = 1U << circuit->depth[0];
 
   if (optimizer == NULL) {
-    return result_get_invalid_reason("optimizer is null");
+    Result invalid_result = result_get_invalid_reason("optimizer is null");
+    return *(OptimizationResult *)&invalid_result;
   }
 
   // Count the number of parameters
@@ -285,7 +293,7 @@ Result optimizer_optimize(Optimizer *optimizer) {
     // Max iteration?
     if (opt_settings.max_iterations >= 0) {
       iter_count++;
-      if (iter_count >= opt_settings.max_iterations) break;
+      if (iter_count >= (unsigned int)opt_settings.max_iterations) break;
     }
 
     // Compute an adadelta update
@@ -449,5 +457,10 @@ Result optimizer_optimize(Optimizer *optimizer) {
     param->gate->reparamFn(&param->gate->matrix, param->params);
   }
 
-  return result_get_empty_valid();
+  OptimizationResult result;
+  result.quit_on_max_iter =
+      (iter_count >= (unsigned int)opt_settings.max_iterations) ? true : false;
+  result.valid = true;
+  result.content.data = circuit;
+  return result;
 }

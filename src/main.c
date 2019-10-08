@@ -72,7 +72,8 @@ int main(void) {
 
   {
     time_t start = time(NULL);
-    result_unwrap(optimizer_optimize(&optimizer));
+    result_unwrap(
+        optimization_result_as_result(optimizer_optimize(&optimizer)));
     time_t end = time(NULL);
 
     printf("OPTIMIZATION: \n");
