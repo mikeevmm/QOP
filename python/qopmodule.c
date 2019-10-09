@@ -421,8 +421,8 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
         return NULL;
       }
 
-      PyObject *deltas = PyDict_GetItemString(opt_dict, "deltas");
       PyObject *gates = PyDict_GetItemString(opt_dict, "gates");
+      PyObject *deltas = PyDict_GetItemString(opt_dict, "deltas");
 
       if ((gates != NULL) ^ (deltas != NULL)) {
         PyErr_SetString(PyExc_ValueError,
@@ -434,19 +434,36 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
       }
 
       if (gates != NULL) {
-        if (!PyIter_Check(deltas)) {
+        if (!(PyList_Check(gates) || PyTuple_Check(gates) ||
+              PyIter_Check(gates))) {
           PyErr_SetString(PyExc_ValueError,
-                          "settings:optimize:deltas object must be iterable");
+                          "settings:optimize:gates object must be iterable");
           vector_free(&reparams_vec);
           Py_DECREF(hamiltonian_arr);
           return NULL;
         }
 
-        if (!PyIter_Check(gates)) {
+        if (!(PyList_Check(deltas) || PyTuple_Check(deltas) ||
+              PyIter_Check(deltas))) {
           PyErr_SetString(PyExc_ValueError,
-                          "settings:optimize:gates object must be iterable");
+                          "settings:optimize:deltas object must be iterable");
           vector_free(&reparams_vec);
           Py_DECREF(hamiltonian_arr);
+        }
+
+        PyObject *gates_iter = PyObject_GetIter(gates);
+        PyObject *deltas_iter = PyObject_GetIter(deltas);
+
+        if (gates_iter == NULL) {
+          vector_free(&reparams_vec);
+          Py_DECREF(hamiltonian_arr);
+          return NULL;
+        }
+
+        if (deltas_iter == NULL) {
+          vector_free(&reparams_vec);
+          Py_DECREF(hamiltonian_arr);
+          Py_DECREF(gates_iter);
           return NULL;
         }
 
@@ -456,14 +473,18 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
 
         PyObject *next_gate;
         PyObject *next_deltas;
-        while ((next_gate = PyIter_Next(gates)) != NULL) {
-          next_deltas = PyIter_Next(deltas);
+        while ((next_gate = PyIter_Next(gates_iter)) != NULL) {
+          next_deltas = PyIter_Next(deltas_iter);
           if (next_deltas == NULL) {
             PyErr_SetString(PyExc_ValueError,
                             "size mismatch between settings:optimize:gates and "
                             "settings:optimize:deltas");
             vector_free(&reparams_vec);
             Py_DECREF(hamiltonian_arr);
+            Py_XDECREF(next_gate);
+            Py_XDECREF(next_deltas);
+            Py_DECREF(gates_iter);
+            Py_DECREF(deltas_iter);
             return NULL;
           }
 
@@ -472,15 +493,35 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
                             "settings:optimize:gates:element must be qop.Gate");
             vector_free(&reparams_vec);
             Py_DECREF(hamiltonian_arr);
+            Py_XDECREF(next_gate);
+            Py_XDECREF(next_deltas);
+            Py_DECREF(gates_iter);
+            Py_DECREF(deltas_iter);
             return NULL;
           }
 
-          if (!PyIter_Check(next_deltas)) {
+          if (!(PyList_Check(next_deltas) || PyTuple_Check(next_deltas) ||
+                PyIter_Check(next_deltas))) {
             PyErr_SetString(
                 PyExc_ValueError,
                 "settings:optimize:deltas:element must be iterable ");
             vector_free(&reparams_vec);
             Py_DECREF(hamiltonian_arr);
+            Py_XDECREF(next_gate);
+            Py_XDECREF(next_deltas);
+            Py_DECREF(gates_iter);
+            Py_DECREF(deltas_iter);
+            return NULL;
+          }
+
+          PyObject *next_deltas_iter = PyObject_GetIter(next_deltas);
+          if (next_deltas_iter == NULL) {
+            vector_free(&reparams_vec);
+            Py_DECREF(hamiltonian_arr);
+            Py_XDECREF(next_gate);
+            Py_XDECREF(next_deltas);
+            Py_DECREF(gates_iter);
+            Py_DECREF(deltas_iter);
             return NULL;
           }
 
@@ -488,8 +529,10 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
           vector_init(&deltas, sizeof(double), 1);
           {
             PyObject *next_delta;
-            while ((next_delta = PyIter_Next(next_deltas)) != NULL) {
+            while ((next_delta = PyIter_Next(next_deltas_iter)) != NULL) {
               double delta = PyFloat_AsDouble(next_delta);
+              Py_DECREF(next_delta);
+
               Result push_result = vector_push(&deltas, &delta);
               if (!push_result.valid) {
                 PyErr_SetString(QopError,
@@ -505,9 +548,17 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
                 }
                 vector_free(&deltas);
                 Py_DECREF(hamiltonian_arr);
+                Py_DECREF(next_delta);
+                Py_DECREF(next_deltas_iter);
+                Py_XDECREF(next_gate);
+                Py_XDECREF(next_deltas);
+                Py_DECREF(gates_iter);
+                Py_DECREF(deltas_iter);
                 return NULL;
               }
             }
+
+            Py_DECREF(next_deltas_iter);
           }
 
           QopGateObject *gate = (QopGateObject *)next_gate;
@@ -516,7 +567,12 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
                                     gate->params, deltas.data);
           vector_push(&reparams_vec, &param);
           vector_free(&deltas);
+
+          Py_XDECREF(next_gate);
+          Py_XDECREF(next_deltas);
         }
+        Py_DECREF(gates_iter);
+        Py_DECREF(deltas_iter);
       }
 
       PyObject *stop_at_obj = PyDict_GetItemString(opt_dict, "stop_at");

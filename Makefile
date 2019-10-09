@@ -53,7 +53,7 @@ check:
 py_build: $(SRC_DIR)/*.c $(PYTHON_DIR)/*.c
 	python3 buildext.py build
 	python3 buildext.py install $(PYFLAGS)
-	python3 $(TEST_DIR)/test_ext.py
+	python3 -q -X faulthandler $(TEST_DIR)/test_ext.py
 
 py_debug:
 	gdb -q -ex start --args python3 $(TEST_DIR)/test_ext.py

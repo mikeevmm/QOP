@@ -21,6 +21,9 @@ if True:
         'ada': {
             'rho': 0.9,
             'epsilon': 0.001,
+        },
+        'optimize': {
+            'max_iterations': 5
         }
     })
     print(result)
