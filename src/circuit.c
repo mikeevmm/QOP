@@ -188,7 +188,7 @@ Result circuit_harden(Circuit *circuit) {
     if (new_malloc == NULL) {
       return result_get_invalid_reason("could not malloc");
     }
-    memset(new_malloc, (int)NULL, malloc_size / sizeof(SoftGate *));
+    memset(new_malloc, 0, malloc_size);
     circuit->hardened_gates = (SoftGate **)new_malloc;
   }
 
@@ -200,7 +200,7 @@ Result circuit_harden(Circuit *circuit) {
       SoftGate *soft_gate = (SoftGate *)next.data;
       unsigned int flat_position = soft_gate_flat_position(circuit, soft_gate);
       SoftGate **ptr_pos = circuit->hardened_gates + flat_position;
-      if (*ptr_pos != NULL) {
+      if (*(int *)ptr_pos != 0) {
         free(circuit->hardened_gates);
         return result_get_invalid_reason(
             "soft gates memory position collision");
@@ -332,7 +332,7 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
     // is transferred to inout after a slice cycle
     double _Complex output[1 << qubits];
     memset(output, 0, sizeof(output));
-    
+
     // Bitmasks:
     //    Relevant bits (gates only)
     unsigned int mask = 0;
