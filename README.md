@@ -38,13 +38,13 @@ You can also build and install the Python interface library (`qop`) by running
 # Clone the library if you haven't done so already
 # git clone git@bitbucket.org:MikeEVMM/qop.git
 # cd qop
-make python
+make py_build
 ```
 
 This will install the library with the `--user` flag set; if you want to disable this flag, set the `no_user` variable:
 
 ```bash
-no_user=y make python
+no_user=y make py_build
 ```
 
 ---

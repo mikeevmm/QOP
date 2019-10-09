@@ -4,6 +4,7 @@ DBG = gdb
 SRC_DIR = src
 OBJ_DIR = obj
 PYTHON_DIR = python
+TEST_DIR = tests
 
 SRC = $(wildcard $(SRC_DIR)/*.c)
 OBJ = $(SRC:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
@@ -49,8 +50,12 @@ check:
 	make all
 	valgrind --leak-check=full ./$(EXE)
 
-python: $(SRC_DIR)/*.c $(PYTHON_DIR)/*.c
+py_build: $(SRC_DIR)/*.c $(PYTHON_DIR)/*.c
 	python3 buildext.py build
 	python3 buildext.py install $(PYFLAGS)
+	python3 $(TEST_DIR)/test_ext.py
+
+py_debug:
+	gdb -q -ex start --args python3 $(TEST_DIR)/test_ext.py
 
 .PHONY: all clean
