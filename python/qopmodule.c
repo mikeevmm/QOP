@@ -94,7 +94,27 @@ static PyObject *qop_create_circuit(PyTypeObject *type, PyObject *args,
   return (PyObject *)self;
 }
 
-static PyObject *qop_create_gate(PyTypeObject *type, PyObject *args,
+static void qop_circuit_obj_dealloc(QopCircuitObject *self) {
+  circuit_free(&self->circuit);
+  {
+    Iter refs_iter = vector_iter_create(&self->gate_obj_refs);
+    Option next;
+    while ((next = iter_next(&refs_iter)).some) {
+      QopGateObject *gate_obj_ptr = *(QopGateObject **)next.data;
+      Py_DECREF(gate_obj_ptr);
+    }
+  }
+  vector_free(&self->gate_obj_refs);
+  Py_TYPE(self)->tp_free((PyObject *)self);
+}
+
+static void qop_gate_obj_dealloc(QopGateObject *self) {
+  gate_free(&self->gate);
+  free(self->params);
+  Py_TYPE(self)->tp_free((PyObject *)self);
+}
+
+static PyObject *qop_gate_create(PyTypeObject *type, PyObject *args,
                                  PyObject *kwds) {
   char *identifier_str;
   PyObject *matrix_optional = NULL;
@@ -292,7 +312,7 @@ static PyObject *qop_circuit_add_gate(QopCircuitObject *self, PyObject *args,
   return Py_None;
 }
 
-static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
+static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
                                       PyObject *kwds) {
   PyDictObject *settings = NULL;
   PyObject *hamiltonian_arg;
@@ -317,12 +337,24 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
     }
     hamiltonian_arr = (PyArrayObject *)from_obj;
   }
-  if (PyArray_NDIM(hamiltonian_arr) != 2 ||
-      PyArray_DIMS(hamiltonian_arr)[0] != PyArray_DIMS(hamiltonian_arr)[1]) {
-    PyErr_SetString(PyExc_ValueError,
-                    "hamiltonian is malformed; must be square 2D array");
-    Py_DECREF(hamiltonian_arr);
-    return NULL;
+
+  {
+    int dims = PyArray_NDIM(hamiltonian_arr);
+    npy_intp *size = PyArray_DIMS(hamiltonian_arr);
+    if (dims != 2 || size[0] != size[1]) {
+      PyErr_SetString(PyExc_ValueError,
+                      "hamiltonian is malformed; must be square 2D array");
+      Py_DECREF(hamiltonian_arr);
+      return NULL;
+    }
+
+    if (size[0] != (1 << self->circuit.depth[0])) {
+      PyErr_SetString(
+          PyExc_ValueError,
+          "hamiltonian is malformed; does not match circuit state size");
+      Py_DECREF(hamiltonian_arr);
+      return NULL;
+    }
   }
 
   // Prepare the circuit
@@ -349,6 +381,8 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
   double stop_at = 1e-8;
   Vector reparams_vec;
   vector_init(&reparams_vec, sizeof(GateParameterization), 0);
+  Vector reparams_to_gate_obj_ptr;
+  vector_init(&reparams_to_gate_obj_ptr, sizeof(QopGateObject *), 0);
   bool any_reparam_given = false;
   int max_iters = -1;
 
@@ -372,6 +406,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
     if (!PyDict_Check(settings)) {
       PyErr_SetString(PyExc_ValueError, "settings object must be a dictionary");
       vector_free(&reparams_vec);
+      vector_free(&reparams_to_gate_obj_ptr);
       Py_DECREF(hamiltonian_arr);
       return NULL;
     }
@@ -382,6 +417,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
         PyErr_SetString(PyExc_ValueError,
                         "settings:ada object must be a dictionary");
         vector_free(&reparams_vec);
+        vector_free(&reparams_to_gate_obj_ptr);
         Py_DECREF(hamiltonian_arr);
         return NULL;
       }
@@ -392,6 +428,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
           PyErr_SetString(PyExc_ValueError,
                           "settings:ada:rho object must be a number");
           vector_free(&reparams_vec);
+          vector_free(&reparams_to_gate_obj_ptr);
           Py_DECREF(hamiltonian_arr);
           return NULL;
         }
@@ -404,6 +441,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
           PyErr_SetString(PyExc_ValueError,
                           "settings:ada:epsilon object must be a number");
           vector_free(&reparams_vec);
+          vector_free(&reparams_to_gate_obj_ptr);
           Py_DECREF(hamiltonian_arr);
           return NULL;
         }
@@ -417,6 +455,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
         PyErr_SetString(PyExc_ValueError,
                         "settings:optimize object must be a dictionary");
         vector_free(&reparams_vec);
+        vector_free(&reparams_to_gate_obj_ptr);
         Py_DECREF(hamiltonian_arr);
         return NULL;
       }
@@ -429,6 +468,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
                         "settings:optimize:deltas and settings:optimize:gates "
                         "must both be defined or undefined");
         vector_free(&reparams_vec);
+        vector_free(&reparams_to_gate_obj_ptr);
         Py_DECREF(hamiltonian_arr);
         return NULL;
       }
@@ -439,6 +479,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
           PyErr_SetString(PyExc_ValueError,
                           "settings:optimize:gates object must be iterable");
           vector_free(&reparams_vec);
+          vector_free(&reparams_to_gate_obj_ptr);
           Py_DECREF(hamiltonian_arr);
           return NULL;
         }
@@ -448,6 +489,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
           PyErr_SetString(PyExc_ValueError,
                           "settings:optimize:deltas object must be iterable");
           vector_free(&reparams_vec);
+          vector_free(&reparams_to_gate_obj_ptr);
           Py_DECREF(hamiltonian_arr);
         }
 
@@ -456,12 +498,14 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
 
         if (gates_iter == NULL) {
           vector_free(&reparams_vec);
+          vector_free(&reparams_to_gate_obj_ptr);
           Py_DECREF(hamiltonian_arr);
           return NULL;
         }
 
         if (deltas_iter == NULL) {
           vector_free(&reparams_vec);
+          vector_free(&reparams_to_gate_obj_ptr);
           Py_DECREF(hamiltonian_arr);
           Py_DECREF(gates_iter);
           return NULL;
@@ -480,6 +524,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
                             "size mismatch between settings:optimize:gates and "
                             "settings:optimize:deltas");
             vector_free(&reparams_vec);
+            vector_free(&reparams_to_gate_obj_ptr);
             Py_DECREF(hamiltonian_arr);
             Py_XDECREF(next_gate);
             Py_XDECREF(next_deltas);
@@ -492,6 +537,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
             PyErr_SetString(PyExc_ValueError,
                             "settings:optimize:gates:element must be qop.Gate");
             vector_free(&reparams_vec);
+            vector_free(&reparams_to_gate_obj_ptr);
             Py_DECREF(hamiltonian_arr);
             Py_XDECREF(next_gate);
             Py_XDECREF(next_deltas);
@@ -506,6 +552,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
                 PyExc_ValueError,
                 "settings:optimize:deltas:element must be iterable ");
             vector_free(&reparams_vec);
+            vector_free(&reparams_to_gate_obj_ptr);
             Py_DECREF(hamiltonian_arr);
             Py_XDECREF(next_gate);
             Py_XDECREF(next_deltas);
@@ -517,6 +564,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
           PyObject *next_deltas_iter = PyObject_GetIter(next_deltas);
           if (next_deltas_iter == NULL) {
             vector_free(&reparams_vec);
+            vector_free(&reparams_to_gate_obj_ptr);
             Py_DECREF(hamiltonian_arr);
             Py_XDECREF(next_gate);
             Py_XDECREF(next_deltas);
@@ -545,6 +593,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
                         (GateParameterization *)next.data);
                   }
                   vector_free(&reparams_vec);
+                  vector_free(&reparams_to_gate_obj_ptr);
                 }
                 vector_free(&deltas);
                 Py_DECREF(hamiltonian_arr);
@@ -566,6 +615,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
           optimizer_gate_param_init(&param, &gate->gate, deltas.size,
                                     gate->params, deltas.data);
           vector_push(&reparams_vec, &param);
+          vector_push(&reparams_to_gate_obj_ptr, &gate);
           vector_free(&deltas);
 
           Py_XDECREF(next_gate);
@@ -587,6 +637,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
               optimizer_gate_param_free((GateParameterization *)next.data);
             }
             vector_free(&reparams_vec);
+            vector_free(&reparams_to_gate_obj_ptr);
           }
           Py_DECREF(hamiltonian_arr);
           return NULL;
@@ -603,6 +654,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
               PyExc_ValueError,
               "settings:optimize:max_iterations object must be a number");
           vector_free(&reparams_vec);
+          vector_free(&reparams_to_gate_obj_ptr);
           Py_DECREF(hamiltonian_arr);
           return NULL;
         }
@@ -637,12 +689,15 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
                   optimizer_gate_param_free((GateParameterization *)next.data);
                 }
                 vector_free(&reparams_vec);
+                vector_free(&reparams_to_gate_obj_ptr);
               }
               vector_free(&reparams_vec);
+              vector_free(&reparams_to_gate_obj_ptr);
               Py_DECREF(hamiltonian_arr);
             }
           }
           vector_push(&reparams_vec, &param);
+          vector_push(&reparams_to_gate_obj_ptr, &qop_gate);
         } break;
         default:
           continue;
@@ -653,6 +708,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
   if (reparams_vec.size == 0) {
     PyErr_SetString(QopError, "nothing to optimize");
     vector_free(&reparams_vec);
+    vector_free(&reparams_to_gate_obj_ptr);
     Py_DECREF(hamiltonian_arr);
     return NULL;
   }
@@ -671,6 +727,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
           optimizer_gate_param_free((GateParameterization *)next.data);
         }
         vector_free(&reparams_vec);
+        vector_free(&reparams_to_gate_obj_ptr);
       }
       Py_DECREF(hamiltonian_arr);
     }
@@ -691,42 +748,139 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
   PyListObject *result_list = (PyListObject *)PyList_New(0);
   {
     Iter reparam_iter = vector_iter_create(&reparams_vec);
-    Option next;
-    while ((next = iter_next(&reparam_iter)).some) {
-      GateParameterization *param = (GateParameterization *)next.data;
+    Iter qop_gate_iter = vector_iter_create(&reparams_to_gate_obj_ptr);
+    Option next_reparam;
+    while ((next_reparam = iter_next(&reparam_iter)).some) {
+      GateParameterization *param = (GateParameterization *)next_reparam.data;
+      QopGateObject *qop_gate =
+          *(QopGateObject **)(iter_next(&qop_gate_iter).data);
 
       PyObject *params_sublist = PyList_New(0);
       for (unsigned int i = 0; i < param->param_count; ++i) {
         PyFloatObject *param_value =
             (PyFloatObject *)PyFloat_FromDouble(*(param->params + i));
         PyList_Append((PyObject *)params_sublist, (PyObject *)param_value);
+
+        memcpy(qop_gate->params, param->params,
+               param->param_count * sizeof(double));
       }
       PyList_Append((PyObject *)result_list, (PyObject *)params_sublist);
 
       optimizer_gate_param_free(param);
     }
     vector_free(&reparams_vec);
+    vector_free(&reparams_to_gate_obj_ptr);
   }
 
   return (PyObject *)result_list;
 }
 
-static void qop_circuit_obj_dealloc(QopCircuitObject *self) {
-  circuit_free(&self->circuit);
-  {
-    Iter refs_iter = vector_iter_create(&self->gate_obj_refs);
-    Option next;
-    while ((next = iter_next(&refs_iter)).some) {
-      QopGateObject *gate_obj_ptr = *(QopGateObject **)next.data;
-      Py_DECREF(gate_obj_ptr);
+static PyObject *qop_circuit_get_gates(QopCircuitObject *self) {
+  PyListObject *result_list = (PyListObject *)PyList_New(0);
+  if (result_list == NULL) {
+    return NULL;
+  }
+
+  Iter ref_gates_iter = vector_iter_create(&self->gate_obj_refs);
+  Option next;
+  while ((next = iter_next(&ref_gates_iter)).some) {
+    QopGateObject *gate_obj = *(QopGateObject **)next.data;
+    Py_INCREF(gate_obj);
+    int append_result =
+        PyList_Append((PyObject *)result_list, (PyObject *)gate_obj);
+    if (append_result < 0) {
+      for (Py_ssize_t i = 0; i < PyList_Size((PyObject *)result_list); ++i) {
+        Py_DECREF(PyList_GetItem((PyObject *)result_list, i));
+      }
+      Py_DECREF(result_list);
+      return NULL;
     }
   }
-  vector_free(&self->gate_obj_refs);
-  Py_TYPE(self)->tp_free((PyObject *)self);
+
+  return (PyObject *)result_list;
 }
 
-static void qop_gate_obj_dealloc(QopGateObject *self) {
-  gate_free(&self->gate);
-  free(self->params);
-  Py_TYPE(self)->tp_free((PyObject *)self);
+static PyObject *qop_gate_reparameterize(QopGateObject *self, PyObject *args,
+                                         PyObject *kwds) {
+  if (self->gate.reparamFn == NULL) {
+    PyErr_SetString(QopError, "gate is not parameterized");
+    return NULL;
+  }
+
+  PyObject *args_list;
+
+  char *kwarg_names[] = {"parameters", NULL};
+  if (!PyArg_ParseTupleAndKeywords(args, kwds, "O", kwarg_names, &args_list)) {
+    PyErr_SetString(PyExc_ValueError, "expecting parameters iterable");
+    return NULL;
+  }
+
+  if (!(PyList_Check(args_list) || PyTuple_Check(args_list) ||
+        PyIter_Check(args_list))) {
+    PyErr_SetString(PyExc_ValueError, "expecting iterable parameters");
+    return NULL;
+  }
+
+  Vector params;
+  vector_init(&params, sizeof(double), 1);
+  {
+    PyObject *args_iter = PyObject_GetIter(args_list);
+    if (args_iter == NULL) {
+      return NULL;
+    }
+
+    PyObject *next;
+    while ((next = PyIter_Next(args_iter)) != NULL) {
+      if (!PyNumber_Check(next)) {
+        PyErr_SetString(PyExc_ValueError, "got unexpected non-numeric value");
+        Py_DECREF(args_iter);
+        return NULL;
+      }
+      double param = PyFloat_AsDouble(next);
+      vector_push(&params, &param);
+
+      Py_DECREF(next);
+    }
+
+    Py_DECREF(args_iter);
+  }
+  self->gate.reparamFn(&self->gate.matrix, params.data);
+  memcpy(self->params, params.data, params.size * sizeof(double));
+  vector_free(&params);
+
+  Py_INCREF(Py_None);
+  return Py_None;
+}
+
+static PyObject *qop_gate_get_parameters(QopGateObject *self) {
+  PyListObject *result = (PyListObject *)PyList_New(0);
+  unsigned int param_count;
+  switch (self->gate.id) {
+    case GateRx:
+    case GateRy:
+    case GateRz: {
+      param_count = 1;
+    } break;
+    default: { param_count = 0; } break;
+  }
+
+  for (unsigned int i = 0; i < param_count; ++i) {
+    PyList_Append((PyObject *)result, PyFloat_FromDouble(*(self->params + i)));
+  }
+
+  return (PyObject *)result;
+}
+
+static PyObject *qop_gate_get_matrix(QopGateObject *self) {
+  PyListObject *result = (PyListObject *)PyList_New(0);
+  for (unsigned int i = 0; i < 2; ++i) {
+    PyListObject *row = (PyListObject *)PyList_New(0);
+    for (unsigned int j = 0; j < 2; ++j) {
+      double _Complex elem = self->gate.matrix[i][j];
+      PyList_Append((PyObject *)row, (PyObject *)PyComplex_FromDoubles(
+                                         creal(elem), cimag(elem)));
+    }
+    PyList_Append((PyObject *)result, (PyObject *)row);
+  }
+  return (PyObject *)result;
 }

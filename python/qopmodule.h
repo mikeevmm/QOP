@@ -30,15 +30,21 @@ typedef struct QopGateObject {
 
 static PyObject *qop_create_circuit(PyTypeObject *type, PyObject *args,
                                     PyObject *kwds);
-static PyObject *qop_create_gate(PyTypeObject *type, PyObject *args,
+static PyObject *qop_gate_create(PyTypeObject *type, PyObject *args,
                                  PyObject *kwds);
-static PyObject *qop_circuit_add_gate(QopCircuitObject *self, PyObject *args,
-                                      PyObject *kwds);
-static PyObject *qop_get_gates(QopCircuitObject *self);
-static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
-                                      PyObject *kwds);
 static void qop_circuit_obj_dealloc(QopCircuitObject *obj);
 static void qop_gate_obj_dealloc(QopGateObject *obj);
+
+static PyObject *qop_circuit_add_gate(QopCircuitObject *self, PyObject *args,
+                                      PyObject *kwds);
+static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
+                                      PyObject *kwds);
+static PyObject *qop_circuit_get_gates(QopCircuitObject *self);
+
+static PyObject *qop_gate_reparameterize(QopGateObject *self, PyObject *args,
+                                         PyObject *kwds);
+static PyObject *qop_gate_get_parameters(QopGateObject *self);
+static PyObject *qop_gate_get_matrix(QopGateObject *self);
 
 static PyMemberDef qop_circuit_obj_members[] = {
     {"qubits", T_INT, offsetof(QopCircuitObject, qubit_count), READONLY,
@@ -49,13 +55,24 @@ static PyMethodDef qop_circuit_obj_methods[] = {
     {"add_gate", (PyCFunction)qop_circuit_add_gate,
      METH_VARARGS | METH_KEYWORDS,
      "Add a previously created gate to this circuit."},
-    {"optimize", (PyCFunction)qop_optimize_circuit,
+    {"get_gates", (PyCFunction)qop_circuit_get_gates, METH_NOARGS,
+     "Returns a list of all gates added to this circuit."},
+    {"optimize", (PyCFunction)qop_circuit_optimize,
      METH_VARARGS | METH_KEYWORDS, "Optimize all given gates"},
     {NULL}};
 
+static PyMethodDef qop_gate_obj_methods[] = {
+    {"reparameterize", (PyCFunction)qop_gate_reparameterize,
+     METH_VARARGS | METH_KEYWORDS,
+     "Set new parameters on a reparameterized gate."},
+    {"get_parameters", (PyCFunction)qop_gate_get_parameters, METH_NOARGS,
+     "Get a tuple of the gate's current parameters."},
+    {"get_matrix", (PyCFunction)qop_gate_get_matrix, METH_NOARGS,
+     "Get the 2x2 matrix representation of this gate."},
+    {NULL}};
+
 static PyTypeObject QopCircuitType = {
-    PyVarObject_HEAD_INIT(NULL, 0)
-    .tp_name = "qop.Circuit",
+    PyVarObject_HEAD_INIT(NULL, 0).tp_name = "qop.Circuit",
     .tp_doc = "A quantum circuit.",
     .tp_basicsize = sizeof(QopCircuitObject),
     .tp_itemsize = 0,
@@ -67,19 +84,19 @@ static PyTypeObject QopCircuitType = {
 };
 
 static PyTypeObject QopGateType = {
-    PyVarObject_HEAD_INIT(NULL, 0)
-    .tp_name = "qop.Gate",
+    PyVarObject_HEAD_INIT(NULL, 0).tp_name = "qop.Gate",
     .tp_doc = "A quantum gate.",
     .tp_basicsize = sizeof(QopGateObject),
     .tp_itemsize = 0,
     .tp_flags = Py_TPFLAGS_DEFAULT,
-    .tp_new = qop_create_gate,
-    .tp_dealloc = (destructor)qop_gate_obj_dealloc};
+    .tp_new = qop_gate_create,
+    .tp_dealloc = (destructor)qop_gate_obj_dealloc,
+    .tp_methods = qop_gate_obj_methods};
 
 static PyMethodDef qop_methods[] = {{NULL, NULL, 0, NULL}};
 
-static struct PyModuleDef qopmodule = {PyModuleDef_HEAD_INIT, "qop",
-                                       NULL, /* module documentation */
-                                       -1, qop_methods};
+static struct PyModuleDef qopmodule = {
+    PyModuleDef_HEAD_INIT, "qop",
+    "Python interface for the qop C implementation", -1, qop_methods};
 
 #endif  // QOP_QOPMODULE_H_
