@@ -266,6 +266,8 @@ static PyObject *qop_circuit_add_gate(QopCircuitObject *self, PyObject *args,
   else
     control_opt = option_from_uint((unsigned int)control);
 
+  Py_INCREF(gate_obj);
+
   {
     Result add_r = circuit_add_gate(&self->circuit, &gate_obj->gate,
                                     (unsigned int)qubit, control_opt);
@@ -375,15 +377,15 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
     }
 
     PyObject *ada_dict = PyDict_GetItemString((PyObject *)settings, "ada");
-    if (!PyDict_Check(ada_dict)) {
-      PyErr_SetString(PyExc_ValueError,
-                      "settings:ada object must be a dictionary");
-      vector_free(&reparams_vec);
-      Py_DECREF(hamiltonian_arr);
-      return NULL;
-    }
-
     if (ada_dict != NULL) {
+      if (!PyDict_Check(ada_dict)) {
+        PyErr_SetString(PyExc_ValueError,
+                        "settings:ada object must be a dictionary");
+        vector_free(&reparams_vec);
+        Py_DECREF(hamiltonian_arr);
+        return NULL;
+      }
+
       PyObject *rho = PyDict_GetItemString(ada_dict, "rho");
       if (rho != NULL) {
         if (!PyFloat_Check(rho)) {
@@ -410,26 +412,16 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
     }
 
     PyObject *opt_dict = PyDict_GetItemString((PyObject *)settings, "optimize");
-    if (!PyDict_Check(opt_dict)) {
-      PyErr_SetString(PyExc_ValueError,
-                      "settings:optimize object must be a dictionary");
-      vector_free(&reparams_vec);
-      Py_DECREF(hamiltonian_arr);
-      return NULL;
-    }
-
     if (opt_dict != NULL) {
-      PyObject *deltas = PyDict_GetItemString(opt_dict, "deltas");
-      if (deltas != NULL) {
-        if (!PyIter_Check(deltas)) {
-          PyErr_SetString(PyExc_ValueError,
-                          "settings:optimize:deltas object must be iterable");
-          vector_free(&reparams_vec);
-          Py_DECREF(hamiltonian_arr);
-          return NULL;
-        }
+      if (!PyDict_Check(opt_dict)) {
+        PyErr_SetString(PyExc_ValueError,
+                        "settings:optimize object must be a dictionary");
+        vector_free(&reparams_vec);
+        Py_DECREF(hamiltonian_arr);
+        return NULL;
       }
 
+      PyObject *deltas = PyDict_GetItemString(opt_dict, "deltas");
       PyObject *gates = PyDict_GetItemString(opt_dict, "gates");
 
       if ((gates != NULL) ^ (deltas != NULL)) {
@@ -442,6 +434,14 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
       }
 
       if (gates != NULL) {
+        if (!PyIter_Check(deltas)) {
+          PyErr_SetString(PyExc_ValueError,
+                          "settings:optimize:deltas object must be iterable");
+          vector_free(&reparams_vec);
+          Py_DECREF(hamiltonian_arr);
+          return NULL;
+        }
+
         if (!PyIter_Check(gates)) {
           PyErr_SetString(PyExc_ValueError,
                           "settings:optimize:gates object must be iterable");
@@ -569,8 +569,23 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
         case GateRz: {
           GateParameterization param;
           double delta[] = {0.1};
-          optimizer_gate_param_init(&param, &qop_gate->gate, 1,
-                                    qop_gate->params, delta);
+          {
+            Result init_r = optimizer_gate_param_init(
+                &param, &qop_gate->gate, 1, qop_gate->params, delta);
+            if (!init_r.valid) {
+              PyErr_SetString(QopError, init_r.content.error_details.reason);
+              {
+                Iter reparam_iter = vector_iter_create(&reparams_vec);
+                Option next;
+                while ((next = iter_next(&reparam_iter)).some) {
+                  optimizer_gate_param_free((GateParameterization *)next.data);
+                }
+                vector_free(&reparams_vec);
+              }
+              vector_free(&reparams_vec);
+              Py_DECREF(hamiltonian_arr);
+            }
+          }
           vector_push(&reparams_vec, &param);
         } break;
         default:
