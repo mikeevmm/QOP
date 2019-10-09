@@ -465,8 +465,11 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
   }
 
   OptimizationResult result;
-  result.quit_on_max_iter =
-      (iter_count >= (unsigned int)opt_settings.max_iterations) ? true : false;
+  if (opt_settings.max_iterations >= 0 &&
+      iter_count >= (unsigned int)opt_settings.max_iterations)
+    result.quit_on_max_iter = true;
+  else
+    result.quit_on_max_iter = false;
   result.valid = true;
   result.content.data = circuit;
   return result;

@@ -267,7 +267,6 @@ static PyObject *qop_circuit_add_gate(QopCircuitObject *self, PyObject *args,
     control_opt = option_from_uint((unsigned int)control);
 
   {
-    // No not Py_INCREF gate! It seems like it's already done???
     Result add_r = circuit_add_gate(&self->circuit, &gate_obj->gate,
                                     (unsigned int)qubit, control_opt);
     if (!add_r.valid) {
@@ -324,10 +323,28 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
     return NULL;
   }
 
+  // Prepare the circuit
+  {
+    Result comp_r = circuit_compact(&self->circuit);
+    if (!comp_r.valid) {
+      PyErr_SetString(QopError, comp_r.content.error_details.reason);
+      Py_DECREF(hamiltonian_arr);
+      return NULL;
+    }
+  }
+  {
+    Result hard_r = circuit_harden(&self->circuit);
+    if (!hard_r.valid) {
+      PyErr_SetString(QopError, hard_r.content.error_details.reason);
+      Py_DECREF(hamiltonian_arr);
+      return NULL;
+    }
+  }
+
   // Default settings; to be possibly changed using user-supplied
   // dictionary
   AdadeltaSettings ada_settings = optimizer_adadelta_get_default();
-  double stop_at = 1e-6;
+  double stop_at = 1e-8;
   Vector reparams_vec;
   vector_init(&reparams_vec, sizeof(GateParameterization), 0);
   bool any_reparam_given = false;
@@ -482,7 +499,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
                   Option next;
                   while ((next = iter_next(&reparam_iter)).some) {
                     optimizer_gate_param_free(
-                        *(GateParameterization **)next.data);
+                        (GateParameterization *)next.data);
                   }
                   vector_free(&reparams_vec);
                 }
@@ -511,7 +528,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
             Iter reparam_iter = vector_iter_create(&reparams_vec);
             Option next;
             while ((next = iter_next(&reparam_iter)).some) {
-              optimizer_gate_param_free(*(GateParameterization **)next.data);
+              optimizer_gate_param_free((GateParameterization *)next.data);
             }
             vector_free(&reparams_vec);
           }
@@ -551,7 +568,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
         case GateRy:
         case GateRz: {
           GateParameterization param;
-          double delta[] = {1e-2};  // ~1/pi rad
+          double delta[] = {0.1};
           optimizer_gate_param_init(&param, &qop_gate->gate, 1,
                                     qop_gate->params, delta);
           vector_push(&reparams_vec, &param);
@@ -570,9 +587,23 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
   }
 
   OptimizerSettings opt_settings;
-  optimizer_settings_init(&opt_settings, &self->circuit,
-                          PyArray_DATA(hamiltonian_arr), stop_at,
-                          reparams_vec.data, reparams_vec.size, max_iters);
+  {
+    Result init_result = optimizer_settings_init(
+        &opt_settings, &self->circuit, PyArray_DATA(hamiltonian_arr), stop_at,
+        reparams_vec.data, reparams_vec.size, max_iters);
+    if (!init_result.valid) {
+      PyErr_SetString(QopError, init_result.content.error_details.reason);
+      {
+        Iter reparam_iter = vector_iter_create(&reparams_vec);
+        Option next;
+        while ((next = iter_next(&reparam_iter)).some) {
+          optimizer_gate_param_free((GateParameterization *)next.data);
+        }
+        vector_free(&reparams_vec);
+      }
+      Py_DECREF(hamiltonian_arr);
+    }
+  }
 
   // Perform optimization
   Optimizer optimizer;
@@ -585,7 +616,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
   // Free optimizer settings
   optimizer_settings_free(&opt_settings);
 
-  // Free gate parameterizations, but saving the results
+  // Free gate parameterizations, but save the results
   PyListObject *result_list = (PyListObject *)PyList_New(0);
   {
     Iter reparam_iter = vector_iter_create(&reparams_vec);
@@ -593,7 +624,7 @@ static PyObject *qop_optimize_circuit(QopCircuitObject *self, PyObject *args,
     while ((next = iter_next(&reparam_iter)).some) {
       GateParameterization *param = (GateParameterization *)next.data;
 
-      PyObject *params_sublist = PyList_New(param->param_count);
+      PyObject *params_sublist = PyList_New(0);
       for (unsigned int i = 0; i < param->param_count; ++i) {
         PyFloatObject *param_value =
             (PyFloatObject *)PyFloat_FromDouble(*(param->params + i));
