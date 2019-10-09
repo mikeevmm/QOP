@@ -736,7 +736,21 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
   // Perform optimization
   Optimizer optimizer;
   optimizer_init(&optimizer, opt_settings, ada_settings);
-  optimizer_optimize(&optimizer);
+  OptimizationResult opt_result = optimizer_optimize(&optimizer);
+  if (!opt_result.valid) {
+    PyErr_SetString(QopError, opt_result.content.error_details.reason);
+    {
+      Iter reparam_iter = vector_iter_create(&reparams_vec);
+      Option next;
+      while ((next = iter_next(&reparam_iter)).some) {
+        optimizer_gate_param_free((GateParameterization *)next.data);
+      }
+      vector_free(&reparams_vec);
+      vector_free(&reparams_to_gate_obj_ptr);
+    }
+    Py_DECREF(hamiltonian_arr);
+    optimizer_settings_free(&opt_settings);
+  }
 
   // Free python objects
   Py_DECREF(hamiltonian_arr);
@@ -772,7 +786,8 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
     vector_free(&reparams_to_gate_obj_ptr);
   }
 
-  return (PyObject *)result_list;
+  return PyTuple_Pack(2, result_list,
+                      PyBool_FromLong(opt_result.quit_on_max_iter));
 }
 
 static PyObject *qop_circuit_get_gates(QopCircuitObject *self) {
