@@ -91,6 +91,7 @@ static PyObject *qop_create_circuit(PyTypeObject *type, PyObject *args,
   self->circuit = new_circuit;
   self->qubit_count = qubit_count;
   self->gate_obj_refs = gate_obj_refs;
+  self->compacted_and_hardened = false;
   return (PyObject *)self;
 }
 
@@ -298,6 +299,8 @@ static PyObject *qop_circuit_add_gate(QopCircuitObject *self, PyObject *args,
     }
   }
 
+  self->compacted_and_hardened = false;
+
   {
     Result push_r =
         vector_push(&self->gate_obj_refs, (QopGateObject **)(&gate_obj));
@@ -358,21 +361,24 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
   }
 
   // Prepare the circuit
-  {
-    Result comp_r = circuit_compact(&self->circuit);
-    if (!comp_r.valid) {
-      PyErr_SetString(QopError, comp_r.content.error_details.reason);
-      Py_DECREF(hamiltonian_arr);
-      return NULL;
+  if (!self->compacted_and_hardened) {
+    {
+      Result comp_r = circuit_compact(&self->circuit);
+      if (!comp_r.valid) {
+        PyErr_SetString(QopError, comp_r.content.error_details.reason);
+        Py_DECREF(hamiltonian_arr);
+        return NULL;
+      }
     }
-  }
-  {
-    Result hard_r = circuit_harden(&self->circuit);
-    if (!hard_r.valid) {
-      PyErr_SetString(QopError, hard_r.content.error_details.reason);
-      Py_DECREF(hamiltonian_arr);
-      return NULL;
+    {
+      Result hard_r = circuit_harden(&self->circuit);
+      if (!hard_r.valid) {
+        PyErr_SetString(QopError, hard_r.content.error_details.reason);
+        Py_DECREF(hamiltonian_arr);
+        return NULL;
+      }
     }
+    self->compacted_and_hardened = true;
   }
 
   // Default settings; to be possibly changed using user-supplied
@@ -813,6 +819,76 @@ static PyObject *qop_circuit_get_gates(QopCircuitObject *self) {
   }
 
   return (PyObject *)result_list;
+}
+
+static PyObject *qop_circuit_run(QopCircuitObject *self, PyObject *args,
+                                 PyObject *kwds) {
+  PyObject *state_in_obj;
+
+  char *kwarg_names[] = {"state_in", NULL};
+  if (!PyArg_ParseTupleAndKeywords(args, kwds, "O", kwarg_names,
+                                   &state_in_obj)) {
+    PyErr_SetString(PyExc_ValueError, "expecting state_in argument");
+    return NULL;
+  }
+
+  double _Complex state_in[1U << self->qubit_count];
+
+  {
+    PyObject *as_arr =
+        PyArray_FROMANY(state_in_obj, NPY_CDOUBLE, 1, 1,
+                        NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_ALIGNED);
+    if (as_arr == NULL) {
+      PyErr_SetString(PyExc_ValueError,
+                      "cannot interpret state_in as 1D vector");
+      return NULL;
+    }
+    unsigned int vec_size = PyArray_SIZE((PyObject *)as_arr);
+    if (vec_size != (1U << self->qubit_count)) {
+      PyErr_SetString(PyExc_ValueError,
+                      "given input vector does not match size of circuit");
+      return NULL;
+    }
+    memcpy(state_in, PyArray_DATA(as_arr), sizeof(double _Complex) * vec_size);
+  }
+
+  if (!self->compacted_and_hardened) {
+    {
+      Result comp_r = circuit_compact(&self->circuit);
+      if (!comp_r.valid) {
+        PyErr_SetString(QopError, comp_r.content.error_details.reason);
+        return NULL;
+      }
+    }
+    {
+      Result hard_r = circuit_harden(&self->circuit);
+      if (!hard_r.valid) {
+        PyErr_SetString(QopError, hard_r.content.error_details.reason);
+        return NULL;
+      }
+    }
+    self->compacted_and_hardened = true;
+  }
+
+  {
+    Result run_r = circuit_run(&self->circuit, &state_in);
+    if (!run_r.valid) {
+      PyErr_SetString(QopError, run_r.content.error_details.reason);
+      return NULL;
+    }
+  }
+
+  PyObject *return_list = PyList_New(0);
+  if (return_list == NULL) {
+    return NULL;
+  }
+
+  for (unsigned int i = 0; i < (1U << self->qubit_count); ++i) {
+    double _Complex elem = state_in[i];
+    PyList_Append(return_list, PyComplex_FromDoubles(creal(elem), cimag(elem)));
+  }
+
+  return return_list;
 }
 
 static PyObject *qop_gate_reparameterize(QopGateObject *self, PyObject *args,

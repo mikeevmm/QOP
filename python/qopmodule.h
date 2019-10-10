@@ -21,6 +21,7 @@ typedef struct QopCircuitObject {
   PyObject_HEAD Circuit circuit;
   unsigned int qubit_count;
   Vector gate_obj_refs;
+  bool compacted_and_hardened;
 } QopCircuitObject;
 
 typedef struct QopGateObject {
@@ -40,6 +41,8 @@ static PyObject *qop_circuit_add_gate(QopCircuitObject *self, PyObject *args,
 static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
                                       PyObject *kwds);
 static PyObject *qop_circuit_get_gates(QopCircuitObject *self);
+static PyObject *qop_circuit_run(QopCircuitObject *self, PyObject *args,
+                                 PyObject *kwds);
 
 static PyObject *qop_gate_reparameterize(QopGateObject *self, PyObject *args,
                                          PyObject *kwds);
@@ -59,6 +62,8 @@ static PyMethodDef qop_circuit_obj_methods[] = {
      "Returns a list of all gates added to this circuit."},
     {"optimize", (PyCFunction)qop_circuit_optimize,
      METH_VARARGS | METH_KEYWORDS, "Optimize all given gates"},
+    {"run", (PyCFunction)qop_circuit_run, METH_VARARGS | METH_KEYWORDS,
+     "Run a state through the circuit."},
     {NULL}};
 
 static PyMethodDef qop_gate_obj_methods[] = {
