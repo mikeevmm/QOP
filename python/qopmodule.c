@@ -682,7 +682,7 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
         case GateRy:
         case GateRz: {
           GateParameterization param;
-          double delta[] = {0.1};
+          double delta[] = {1./3.14159}; // 1 rad
           {
             Result init_r = optimizer_gate_param_init(
                 &param, &qop_gate->gate, 1, qop_gate->params, delta);

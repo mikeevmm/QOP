@@ -43,7 +43,7 @@ result = c.optimize([[1, 0, 0, 0],
     },
     'optimize': {
         'gates': [x1],
-        'deltas': [[0.1]],
+        'deltas': [[1/3.14159]],
         'max_iterations': 1e4
     }
 })
