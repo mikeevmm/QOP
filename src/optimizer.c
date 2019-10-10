@@ -97,7 +97,7 @@ Result optimizer_settings_init(OptimizerSettings *opt_settings,
   for (unsigned int u = 0; u < state_size; ++u) {
     Vector row;
     {
-      Result init_r = vector_init(&row, sizeof(double _Complex), 0);
+      Result init_r = vector_init(&row, sizeof(OptimizerDCPackedRowElem), 0);
       if (!init_r.valid) {
         free(zero_state);
         return init_r;
@@ -108,7 +108,10 @@ Result optimizer_settings_init(OptimizerSettings *opt_settings,
       // (double _Complex *)([][]) is row major
       double _Complex ham_uk = hamiltonian[u * state_size + k];
       if (ham_uk != 0) {
-        vector_push(&row, &ham_uk);
+        OptimizerDCPackedRowElem elem;
+        elem.value = ham_uk;
+        elem.j = k;
+        vector_push(&row, &elem);
       }
     }
 
@@ -423,13 +426,14 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
               double _Complex right_u = buff_right[u];
 
               for (unsigned int i = 0; i < row->size; ++i) {
-                // k = u + i
-                double _Complex left_k = buff_left[u + i];
-                double _Complex right_k = buff_right[u + i];
+                OptimizerDCPackedRowElem elem =
+                    *((OptimizerDCPackedRowElem *)row->data + i);
+                unsigned int k = elem.j;
+                double _Complex left_k = buff_left[k];
+                double _Complex right_k = buff_right[k];
+                double _Complex ham_uk = elem.value;
 
-                double _Complex ham_uk = *((double _Complex *)row->data + i);
-
-                if (i == 0) {
+                if (u == k) {
                   grad_component += creal(ham_uk * (right_u + left_u) *
                                           conj(right_u - left_u)) /
                                     2.;

@@ -77,6 +77,13 @@ typedef struct OptimizerSettings {
   int max_iterations;
 } OptimizerSettings;
 
+// This is a purely internal use struct; it's used to identify the actual
+// position of a collapsed element in a compacted sparse matrix.
+typedef struct OptimizerDCPackedRowElem {
+  double _Complex value;
+  unsigned int j;
+} OptimizerDCPackedRowElem;
+
 // Initializes a new `OptimizerSettings` object.
 // This will `malloc` space for internal use, and a call to
 // `optimizer_settings_free()` should be made when appropriate to free

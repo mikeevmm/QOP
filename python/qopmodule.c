@@ -835,15 +835,15 @@ static PyObject *qop_circuit_run(QopCircuitObject *self, PyObject *args,
   double _Complex state_in[1U << self->qubit_count];
 
   {
-    PyObject *as_arr =
-        PyArray_FROMANY(state_in_obj, NPY_CDOUBLE, 1, 1,
-                        NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_ALIGNED);
+    PyArrayObject *as_arr = (PyArrayObject *)PyArray_FROMANY(
+        state_in_obj, NPY_CDOUBLE, 1, 1,
+        NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_ALIGNED);
     if (as_arr == NULL) {
       PyErr_SetString(PyExc_ValueError,
                       "cannot interpret state_in as 1D vector");
       return NULL;
     }
-    unsigned int vec_size = PyArray_SIZE((PyObject *)as_arr);
+    unsigned int vec_size = PyArray_SIZE(as_arr);
     if (vec_size != (1U << self->qubit_count)) {
       PyErr_SetString(PyExc_ValueError,
                       "given input vector does not match size of circuit");
