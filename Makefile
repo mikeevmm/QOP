@@ -52,7 +52,9 @@ check:
 
 py_build: $(SRC_DIR)/*.c $(PYTHON_DIR)/*.c
 	python3 buildext.py build
+ifndef no_install
 	python3 buildext.py install $(PYFLAGS)
+endif
 	python3 -q -X faulthandler $(TEST_DIR)/test_ext.py
 
 py_debug:

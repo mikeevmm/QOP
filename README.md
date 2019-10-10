@@ -47,6 +47,12 @@ This will install the library with the `--user` flag set; if you want to disable
 no_user=y make py_build
 ```
 
+Or if you don't want to install the library at all (in which case it can be found under `build/`), set the `no_install` variable:
+
+```bash
+no_install=y make py_build
+```
+
 ---
 
 ¹ pronounced qwop (kwɒp), [like the game](http://www.foddy.net/Athletics.html).
