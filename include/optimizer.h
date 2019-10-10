@@ -69,7 +69,7 @@ void optimizer_gate_param_free(GateParameterization *gate_param);
 // optimization!
 typedef struct OptimizerSettings {
   Circuit *circuit;
-  double _Complex *hamiltonian;
+  Vector hamiltonian;
   double stop_at;  // Tolerance to maximum component of gradient
   unsigned int reparams_count;
   GateParameterization *reparams;

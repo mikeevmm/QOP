@@ -68,11 +68,12 @@ Result optimizer_settings_init(OptimizerSettings *opt_settings,
   if (parameterizations == NULL)
     return result_get_invalid_reason("given reparams is null");
 
+  unsigned int state_size = 1U << circuit->depth[0];
+
   // Create |000...> state
   // malloc some memory, compute the state into that and save the pointer.
   double _Complex *zero_state;
   {
-    unsigned int state_size = 1U << circuit->depth[0];
     void *mem = malloc(sizeof(double _Complex) * state_size);
     if (mem == NULL) {
       return result_get_invalid_reason("could not malloc");
@@ -82,9 +83,41 @@ Result optimizer_settings_init(OptimizerSettings *opt_settings,
     zero_state[0] = (double _Complex)1.;
   }
 
+  // Create a compacted representation of the hamiltonian matrix.
+  // This should help with sparse matrices, which are common as physical
+  // Hamiltonians
+  Vector ham_rows;
+  {
+    Result init_r = vector_init(&ham_rows, sizeof(Vector), 0);
+    if (!init_r.valid) {
+      free(zero_state);
+      return init_r;
+    }
+  }
+  for (unsigned int u = 0; u < state_size; ++u) {
+    Vector row;
+    {
+      Result init_r = vector_init(&row, sizeof(double _Complex), 0);
+      if (!init_r.valid) {
+        free(zero_state);
+        return init_r;
+      }
+    }
+
+    for (unsigned int k = u; k < state_size; ++k) {
+      // (double _Complex *)([][]) is row major
+      double _Complex ham_uk = hamiltonian[u * state_size + k];
+      if (ham_uk != 0) {
+        vector_push(&row, &ham_uk);
+      }
+    }
+
+    vector_push(&ham_rows, &row);
+  }
+
   // Initialize fields of the new OptimizerSettings.
   opt_settings->circuit = circuit;
-  opt_settings->hamiltonian = hamiltonian;
+  opt_settings->hamiltonian = ham_rows;
   opt_settings->stop_at = stop_at;
   opt_settings->reparams = parameterizations;
   opt_settings->reparams_count = parameterizations_count;
@@ -97,6 +130,17 @@ Result optimizer_settings_init(OptimizerSettings *opt_settings,
 // Frees the heap memory internally allocated during
 // `optimizer_settings_init`.
 void optimizer_settings_free(OptimizerSettings *opt_settings) {
+  // Free the compact hamiltonian representation
+  {
+    Iter row_iter = vector_iter_create(&opt_settings->hamiltonian);
+    Option next_row;
+    while ((next_row = iter_next(&row_iter)).some) {
+      Vector *row = (Vector *)next_row.data;
+      vector_free(row);
+    }
+    vector_free(&opt_settings->hamiltonian);
+  }
+  // Free |000>
   free(opt_settings->zero_state);
 }
 
@@ -374,29 +418,29 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
           double grad_component = 0;
           {
             for (unsigned int u = 0; u < state_size; ++u) {
+              Vector *row = ((Vector *)opt_settings.hamiltonian.data) + u;
               double _Complex left_u = buff_left[u];
               double _Complex right_u = buff_right[u];
-              double _Complex hamil_uu =
-                  opt_settings.hamiltonian[u * state_size + u];
 
-              for (unsigned int k = u + 1; k < state_size; ++k) {
-                // A 2D array cast to a single pointer results in a
-                // row major style ("rows side by side")
-                double _Complex hamil_uk =
-                    opt_settings.hamiltonian[u * state_size + k];
-                double _Complex left_k = buff_left[k];
-                double _Complex right_k = buff_right[k];
+              for (unsigned int i = 0; i < row->size; ++i) {
+                // k = u + i
+                double _Complex left_k = buff_left[u + i];
+                double _Complex right_k = buff_right[u + i];
 
-                grad_component += creal(hamil_uk * (conj(right_u) * right_k -
+                double _Complex ham_uk = *((double _Complex *)row->data + i);
+
+                if (i == 0) {
+                  grad_component += creal(ham_uk * (right_u + left_u) *
+                                          conj(right_u - left_u)) /
+                                    2.;
+                } else {
+                  grad_component += creal(ham_uk * (conj(right_u) * right_k -
                                                     conj(left_u) * left_k));
+                }
               }
-
-              grad_component += creal(hamil_uu * (right_u + left_u) *
-                                      conj(right_u - left_u)) /
-                                2.;
-
-              grad_component /= delta;
             }
+
+            grad_component /= delta;
           }
 
           // Accumulate the gradient (component wise)

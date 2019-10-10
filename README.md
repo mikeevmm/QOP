@@ -36,7 +36,7 @@ You can also build and install the Python interface library (`qop`) by running
 
 ```bash
 # Clone the library if you haven't done so already
-# git clone git@bitbucket.org:MikeEVMM/qop.git
+# git clone https://MikeEVMM@bitbucket.org/MikeEVMM/qop.git
 # cd qop
 make py_build
 ```
