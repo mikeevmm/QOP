@@ -55,7 +55,9 @@ py_build: $(SRC_DIR)/*.c $(PYTHON_DIR)/*.c
 ifndef no_install
 	python3 buildext.py install $(PYFLAGS)
 endif
+ifndef no_test
 	python3 -q -X faulthandler $(TEST_DIR)/test_ext.py
+endif
 
 py_debug:
 	gdb -q -ex start --args python3 $(TEST_DIR)/test_ext.py

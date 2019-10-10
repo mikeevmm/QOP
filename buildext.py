@@ -12,7 +12,7 @@ module = Extension('qop', sources=sources + py_sources,
                        np.get_include(),
                        dirname(realpath(__file__))
                    ],
-                   extra_compile_args=["-Wno-unused-variable"])
+                   extra_compile_args=["-Wno-unused-variable -O3"])
 
 setup(name='qop',
       version='1.0',
