@@ -55,7 +55,7 @@ Result gate_init_from_identifier(Gate *gate, GateId identifier,
       }
       double theta = params[0];
       double _Complex theta_matrix[2][2] = {
-          {sin(theta / 2), -sin(theta / 2) * _Complex_I},
+          {cos(theta / 2), -sin(theta / 2) * _Complex_I},
           {-sin(theta / 2) * _Complex_I, cos(theta / 2)}};
       memcpy(matrix, theta_matrix, GATE_SINGLE_QUBIT_SIZE);
       reparam_fn = &gate_reparameterize_rx;
@@ -114,8 +114,8 @@ Result gate_clone(Gate *from, Gate *into)
 void gate_reparameterize_rx(double _Complex (*matrix)[2][2], double params[]) {
   double theta = params[0];
   (*matrix)[0][0] = (double _Complex)cos(theta / 2);
-  (*matrix)[0][1] = (double _Complex)-sin(theta / 2) * _Complex_I;
-  (*matrix)[1][0] = (double _Complex)-sin(theta / 2) * _Complex_I;
+  (*matrix)[0][1] = -sin(theta / 2) * _Complex_I;
+  (*matrix)[1][0] = -sin(theta / 2) * _Complex_I;
   (*matrix)[1][1] = (double _Complex)cos(theta / 2);
 }
 
