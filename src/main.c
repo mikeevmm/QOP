@@ -11,7 +11,7 @@
 
 int main(void) {
   Circuit circuit;
-  result_unwrap(circuit_init(&circuit, 2));
+  result_unwrap(circuit_init(&circuit, 3));
   Gate x;
   result_unwrap(gate_init_from_identifier(&x, GateX, NULL));
   Gate x2;
@@ -25,12 +25,15 @@ int main(void) {
   }
   Gate rx2;
   result_unwrap(gate_clone(&rx, &rx2));
+  Gate z;
+  result_unwrap(gate_init_from_identifier(&z, GateZ, NULL));
 
   // result_unwrap(circuit_add_gate(&circuit, &x, 1, option_none_uint()));
   // result_unwrap(circuit_add_gate(&circuit, &x2, 0, option_none_uint()));
   // result_unwrap(circuit_add_gate(&circuit, &h, 0, option_from_uint(1)));
+  result_unwrap(circuit_add_gate(&circuit, &z, 0, option_from_uint(2)));
   result_unwrap(circuit_add_gate(&circuit, &rx, 0, option_none_uint()));
-  result_unwrap(circuit_add_gate(&circuit, &rx2, 1, option_none_uint()));
+  result_unwrap(circuit_add_gate(&circuit, &rx2, 2, option_none_uint()));
   result_unwrap(circuit_compact(&circuit));
   result_unwrap(circuit_harden(&circuit));
 

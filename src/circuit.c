@@ -364,30 +364,32 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
     }
     ncmask = (~cmask) & (leftmost | (leftmost - 1));
 
-    // 1. (see above)
+    // Input string (see 1. above)
     unsigned int x = 0;
     for (unsigned int i = 0; i < (1U << relevant); ++i) {
-      // 2. (see above)
+      // Relevant output bits (see 2. above)
       for (unsigned int y = 0; y < (1U << gates_len); ++y) {
         double _Complex coef = 1.;
         unsigned int proj = 0;
 
         for (unsigned int j = 0; j < gates_len; ++j) {
-          bool cset;
-          SoftGate gate_j;
-          { gate_j = **(SoftGate **)(vector_get_raw(&slice_gates, j)); }
+          SoftGate gate_j = **(SoftGate **)(vector_get_raw(&slice_gates, j));
+
           proj |= (y >> j) << gate_j.position.qubit;
-          cset = (!gate_j.control.some) || ((x >> gate_j.control.data) & 1U);
+          // If there is no control, then the gate is always set,
+          // therefore the ||
+          bool cset =
+              (!gate_j.control.some) || ((x >> gate_j.control.data) & 1U);
 
           unsigned int relevant_x_bit = (x >> gate_j.position.qubit) & 1U;
           unsigned int relevant_y_bit = (y >> j) & 1U;
           if (cset)
             coef *= gate_j.gate->matrix[relevant_y_bit][relevant_x_bit];
           else
-            coef *= (double _Complex)((relevant_x_bit ^ 1U) ^ relevant_y_bit);
+            coef *= (double _Complex)(1U ^ relevant_x_bit ^ relevant_y_bit);
         }
 
-        // 3.4. (see above)
+        // Output string (see 3.4. above)
         unsigned int z = 0;
         for (unsigned int j = 0; j < (1U << (qubits - relevant)); ++j) {
           unsigned int out_index = (proj & mask) | ((z | x) & (~mask));
@@ -415,7 +417,8 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
 
     vector_clean(&slice_gates);
 
-    void *copy = memcpy(*inout, output, sizeof(output));
+    void *copy =
+        memcpy(*inout, output, sizeof(double _Complex) * (1 << qubits));
     if (copy == NULL) return result_get_invalid_reason("memcpy failed");
   }
 

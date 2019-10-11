@@ -4,7 +4,7 @@ DBG = gdb
 SRC_DIR = src
 OBJ_DIR = obj
 PYTHON_DIR = python
-TEST_DIR = tests
+TEST_DIR = examples
 
 SRC = $(wildcard $(SRC_DIR)/*.c)
 OBJ = $(SRC:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)

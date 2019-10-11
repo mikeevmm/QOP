@@ -391,7 +391,12 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
                    sizeof(double _Complex) * state_size);
 
             // Simulate into left buffer
-            circuit_run(circuit, &buff_left);
+            {
+              Result run_r = circuit_run(circuit, &buff_left);
+              if (!run_r.valid) {
+                return result_as_optimization_result(run_r);
+              }
+            }
 
             // Undo shift
             *param_ptr += delta;
@@ -408,7 +413,12 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
                    sizeof(double _Complex) * state_size);
 
             // Simulate into right buffer
-            circuit_run(circuit, &buff_right);
+            {
+              Result run_r = circuit_run(circuit, &buff_right);
+              if (!run_r.valid) {
+                return result_as_optimization_result(run_r);
+              }
+            }
 
             // Undo right shift; reparameterize
             *param_ptr -= delta;

@@ -1,7 +1,7 @@
 import numpy as np
 import faulthandler
 faulthandler.enable()
-
+""" 
 print("Rx, no settings")
 import qop
 c = qop.Circuit(1)
@@ -25,7 +25,7 @@ result = c.optimize([[1, 0], [0, -1]], settings={
     }
 })
 print(result)
-
+ """
 print("Multiple")
 import qop
 c = qop.Circuit(2)
