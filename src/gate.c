@@ -1,5 +1,38 @@
 #include "include/gate.h"
 
+const char *gate_id_to_human(GateId id) {
+  switch (id) {
+    case GateNoId:
+      return "NO ID";
+    case GateCustom:
+      return "CUSTOM";
+    case GateI:
+      return "I";
+    case GateX:
+      return "X";
+    case GateY:
+      return "Y";
+    case GateZ:
+      return "Z";
+    case GateH:
+      return "H";
+    case GateSqrtX:
+      return "SQRTX";
+    case GateT:
+      return "T";
+    case GateS:
+      return "S";
+    case GateRx:
+      return "RX";
+    case GateRy:
+      return "RY";
+    case GateRz:
+      return "RZ";
+    default:
+      return "UNKNOWN";
+  }
+}
+
 // Initialize a new gate from a matrix array.
 // It is important that we `memcpy` the array, rather than assigning it,
 // because we want to make sure that reparameterization doesn't affect
@@ -103,8 +136,7 @@ Result gate_init_from_identifier(Gate *gate, GateId identifier,
   return result_get_valid_with_data(gate);
 }
 
-Result gate_clone(Gate *from, Gate *into)
-{
+Result gate_clone(Gate *from, Gate *into) {
   // There is currently no internal memory allocations in the implementation
   // of the Gate struct
   memcpy(into, from, sizeof(Gate));
@@ -122,7 +154,7 @@ void gate_reparameterize_rx(double _Complex (*matrix)[2][2], double params[]) {
 void gate_reparameterize_ry(double _Complex (*matrix)[2][2], double params[]) {
   double theta = params[0];
   (*matrix)[0][0] = (double _Complex)cos(theta / 2);
-  (*matrix)[0][1] = (double _Complex)-sin(theta / 2);
+  (*matrix)[0][1] = (double _Complex) - sin(theta / 2);
   (*matrix)[1][0] = (double _Complex)sin(theta / 2);
   (*matrix)[1][1] = (double _Complex)cos(theta / 2);
 }

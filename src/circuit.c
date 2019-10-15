@@ -111,6 +111,8 @@ Result circuit_compact(Circuit *circuit) {
 
   // Run over the `SoftGate`s and find the compacted position.
   // Update leftmost available positions accordingly.
+  // TODO: There is space for improvement here; two gates can share a
+  //   control!
   {
     Iter soft_gates_iter = vector_iter_create(&circuit->soft_gates);
     Option next;
@@ -181,6 +183,8 @@ Result circuit_harden(Circuit *circuit) {
   }
 
   // Allocate appropriate size...
+  // TODO: There's space for improvement here; for example with a simple
+  //  BTree map
   {
     size_t malloc_size =
         circuit->depth[0] * circuit->depth[1] * sizeof(SoftGate *);
@@ -242,11 +246,11 @@ Result circuit_harden(Circuit *circuit) {
 // particular that the matrix corresponding to a gate can be thought of
 // in terms of projectors:
 //
-//       <0| <1|
+//       |0> |1>
 //     +-       -+
-// |0> |  a   b  |
+// <0| |  a   b  |
 //     |         |
-// |1> |  c   d  |
+// <1| |  c   d  |
 //     +-       -+
 //
 // Pseudocode of the SSS follows:
@@ -333,92 +337,124 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
     double _Complex output[1 << qubits];
     memset(output, 0, sizeof(output));
 
-    // Bitmasks:
-    //    Relevant bits (gates only)
-    unsigned int mask = 0;
-    //    Relevant bits (gates and controls)
-    unsigned int cmask = 0;
-    //    Irrelevant bits (not gates, not controls)
-    unsigned int ncmask = 0;
+    // Figure out what bits are relevant (gate-affected and controls)
+    unsigned int gate_mask = 0;
+    unsigned int ctrl_gate_mask = 0;
+    unsigned int relevant_count = 0;
+    unsigned int ctrl_relevant_count = 0;
+    {
+      Iter gate_iter = vector_iter_create(&slice_gates);
+      Option next;
+      while ((next = iter_next(&gate_iter)).some) {
+        SoftGate *gate = *(SoftGate **)next.data;
 
-    // Count of relevant bits
-    unsigned int relevant = 0;
+        unsigned int bit = 1U << gate->position.qubit;
+        gate_mask |= bit;
+        ctrl_gate_mask |= bit;
+        relevant_count += 1;
+        ctrl_relevant_count += 1;
 
-    // Determine the bitmasks + `relevant`
-    for (unsigned int i = 0; i < gates_len; ++i) {
-      unsigned int gate_i_qubit;
-      Option_Uint gate_i_control;
-      {
-        SoftGate sg = **((SoftGate **)vector_get_raw(&slice_gates, i));
-        gate_i_qubit = sg.position.qubit;
-        gate_i_control = sg.control;
-      }
-
-      mask |= (1U << gate_i_qubit);
-      if ((cmask ^ mask) != 0U) relevant += 1;
-      cmask |= mask;
-      if (gate_i_control.some) {
-        if ((cmask & (1U << gate_i_control.data)) == 0) relevant += 1;
-        cmask |= 1U << gate_i_control.data;
+        if (gate->control.some) {
+          unsigned int ctrl_bit = 1U << gate->control.data;
+          if ((ctrl_gate_mask & ctrl_bit) !=
+              ctrl_gate_mask)  // Two gates could share the same control
+            ctrl_relevant_count += 1;
+          ctrl_gate_mask |= ctrl_bit;
+        }
       }
     }
-    ncmask = (~cmask) & (leftmost | (leftmost - 1));
 
-    // Input string (see 1. above)
-    unsigned int x = 0;
-    for (unsigned int i = 0; i < (1U << relevant); ++i) {
-      // Relevant output bits (see 2. above)
-      for (unsigned int y = 0; y < (1U << gates_len); ++y) {
-        double _Complex coef = 1.;
-        unsigned int proj = 0;
+    unsigned int rev_in = 0;
+    for (unsigned int rev_in_perm = 0;
+         rev_in_perm < (1U << ctrl_relevant_count); ++rev_in_perm) {
+      // Calculate next relevant bits of `in`
+      while ((rev_in & ctrl_gate_mask) != rev_in) {
+        // If mask if e.g.
+        // 1 0 1 0 0 1 0 1
+        // and current value is
+        // 0 0 1 0 0 1 1 1
+        // `affected_mask` will be the rightmost infringing propagated:
+        // 0 0 0 0 0 0 1 1
+        unsigned int affected_mask =
+            ((~ctrl_gate_mask & rev_in) & (-(~ctrl_gate_mask & rev_in))) |
+            ((~ctrl_gate_mask & rev_in) - 1);
+        unsigned int to_add = (~affected_mask & ctrl_gate_mask) &
+                              (-(~affected_mask & ctrl_gate_mask));
+        rev_in = (rev_in & ~affected_mask) + to_add;
+      }
 
-        for (unsigned int j = 0; j < gates_len; ++j) {
-          SoftGate gate_j = **(SoftGate **)(vector_get_raw(&slice_gates, j));
-
-          proj |= (y >> j) << gate_j.position.qubit;
-          // If there is no control, then the gate is always set,
-          // therefore the ||
-          bool cset =
-              (!gate_j.control.some) || ((x >> gate_j.control.data) & 1U);
-
-          unsigned int relevant_x_bit = (x >> gate_j.position.qubit) & 1U;
-          unsigned int relevant_y_bit = (y >> j) & 1U;
-          if (cset)
-            coef *= gate_j.gate->matrix[relevant_y_bit][relevant_x_bit];
-          else
-            coef *= (double _Complex)(1U ^ relevant_x_bit ^ relevant_y_bit);
+      unsigned int rev_out = 0;
+      for (unsigned int rev_out_perm = 0; rev_out_perm < (1U << relevant_count);
+           ++rev_out_perm) {
+        // Calculate next relevant bits of `out`
+        while ((rev_out & gate_mask) != rev_out) {
+          unsigned int affected_mask =
+              ((~gate_mask & rev_out) & (-(~gate_mask & rev_out))) |
+              ((~gate_mask & rev_out) - 1);
+          unsigned int to_add =
+              (~affected_mask & gate_mask) & (-(~affected_mask & gate_mask));
+          rev_out = (rev_out & ~affected_mask) + to_add;
         }
 
-        // Output string (see 3.4. above)
-        unsigned int z = 0;
-        for (unsigned int j = 0; j < (1U << (qubits - relevant)); ++j) {
-          unsigned int out_index = (proj & mask) | ((z | x) & (~mask));
-          output[out_index] += coef * (*inout)[z | x];
+        // Perform common calculation
+        double _Complex coef = 1.;
+        {
+          Iter gates = vector_iter_create(&slice_gates);
+          Option next;
+          while ((next = iter_next(&gates)).some) {
+            SoftGate *gate = *(SoftGate **)next.data;
 
-          // Move to the next number z in the "relevant qubit number space";
-          // it's like counting using only some fingers!
-          // See above for a detailed explanation
-          z += 1;
-          while ((z & ncmask) != z) {
-            unsigned int p = ~((z & (-z)) | ((z & (-z)) - 1));
-            z = (z & p) + ((ncmask & p) & (-(ncmask & p)));
+            bool cset =
+                !gate->control.some || ((rev_in >> gate->control.data) & 1);
+            bool out_bit = (rev_out >> gate->position.qubit) & 1;
+            bool in_bit = (rev_in >> gate->position.qubit) & 1;
+            if (cset)
+              coef *= gate->gate->matrix[out_bit][in_bit];
+            else
+              coef *= 1U ^ out_bit ^ in_bit;
           }
         }
+
+        // (Bit flip) Permutations of the irrelevant parts of in to be
+        // OR'd with `rev_in`
+        unsigned int irrev_in = 0;
+        for (unsigned int in_irrev_perm = 0;
+             in_irrev_perm < (1U << (qubits - ctrl_relevant_count));
+             ++in_irrev_perm) {
+          // Calculate next `irrev_in`
+          // This looks different from `in` because we're considering
+          // not `ctrl_gate_mask`, but `~ctrl_gate_mask` as the mask.
+          while ((irrev_in & ~ctrl_gate_mask) != irrev_in) {
+            unsigned int affected_mask =
+                ((ctrl_gate_mask & irrev_in) & (-(ctrl_gate_mask & irrev_in))) |
+                ((ctrl_gate_mask & irrev_in) - 1);
+            unsigned int to_add = ~(affected_mask | ctrl_gate_mask) &
+                                  (-~(affected_mask | ctrl_gate_mask));
+            irrev_in = (irrev_in & ~affected_mask) + to_add;
+          }
+
+          // Composed `in` string
+          unsigned int in = rev_in | irrev_in;
+          // Bitflipped `out` string
+          unsigned int out = (in & ~gate_mask) | rev_out;
+
+          // Set values
+          //printf("%d %d\n", in, out);
+          output[out] += (*inout)[in] * coef;
+
+          irrev_in += 1;
+        }
+
+        rev_out += 1;
       }
 
-      // Move to the next relevant x
-      // See above for a detailed explanation
-      x = x + 1;
-      while ((x & cmask) != x) {
-        unsigned int p = ~((x & (-x)) | ((x & (-x)) - 1));
-        x = (x & p) + ((cmask & p) & (-(cmask & p)));
-      }
+      rev_in += 1;
     }
 
     vector_clean(&slice_gates);
 
     void *copy =
-        memcpy(*inout, output, sizeof(double _Complex) * (1 << qubits));
+        memcpy(*inout, output, sizeof(double _Complex) * (1UL << qubits));
     if (copy == NULL) return result_get_invalid_reason("memcpy failed");
   }
 

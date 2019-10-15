@@ -96,7 +96,7 @@ Result vector_raw_push(Vector *v, void *object_ptr) {
     return result_get_invalid_reason("could not memcpy");
   }
   v->size += 1;
-  return result_get_valid_with_data(v);
+  return result_get_valid_with_data(moved);
 }
 
 Result vector_extend(Vector *v, void *head, size_t obj_count) {
@@ -120,7 +120,7 @@ Result vector_extend_raw(Vector *v, void *head, size_t obj_count) {
     return result_get_invalid_reason("failed to memcpy");
   }
   v->size += obj_count;
-  return result_get_valid_with_data(v);
+  return result_get_valid_with_data(moved);
 }
 
 Result vector_pop(Vector *v) {

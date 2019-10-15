@@ -388,7 +388,7 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
 
             // Initialize left buffer to |0>
             memcpy(buff_left, opt_settings.zero_state,
-                   sizeof(double _Complex) * state_size);
+                   sizeof(double _Complex) * (unsigned long int)state_size);
 
             // Simulate into left buffer
             {

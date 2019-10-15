@@ -47,6 +47,8 @@ typedef enum GateId {
   GateRz,
 } GateId;
 
+const char *gate_id_to_human(GateId id);
+
 // Constant gate size for use with malloc or memcpy
 static const size_t GATE_SINGLE_QUBIT_SIZE = 4 * sizeof(double _Complex);
 
