@@ -505,14 +505,12 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
           dx_sqr_acc += (1. - ada_settings.rho) * pow(update, 2);
 
           // Apply update!
-          printf("%e ", *param_ptr);
           *param_ptr += update;
 
           // Flat index...
           ++flat_param_index;
         }
       }
-      printf("\n");
     }
   }
 
