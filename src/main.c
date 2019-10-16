@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 #include "include/circuit.h"
 #include "include/gate.h"
@@ -217,6 +218,10 @@ int main(void) {
   Vector reparams;
   result_unwrap(vector_init(&reparams, sizeof(GateParameterization), 0));
 
+  // Fix the seed so that results are reproducible
+  // Paul Dirac was born on 8th Aug 1902 :)
+  srand(8081902);
+
   // First push all gates, to make sure their memory position doesn't
   // change
   for (int l = 0; l < 2; ++l) {
@@ -263,9 +268,9 @@ int main(void) {
     //  terminates immediately! This is likely due to 1st order
     //  approximation of the derivative, which fails for a cos.
     //  What to do?
-    double param[] = {0.1};
     double delta[] = {1. / 3.1415926};
     while ((next = iter_next(&gates_iter)).some) {
+      double param[] = {((double)rand() / RAND_MAX - 1.) * 3.1415926};
       Gate *gate = (Gate *)next.data;
 
       // Reparam
@@ -286,23 +291,10 @@ int main(void) {
   result_unwrap(circuit_compact(&circuit));
   result_unwrap(circuit_harden(&circuit));
 
-  {
-    printf(">>> Gates of the circuit after compactation\n");
-    Iter sgiter = vector_iter_create(&circuit.soft_gates);
-    Option next;
-    while ((next = iter_next(&sgiter)).some) {
-      SoftGate *sg = (SoftGate *)next.data;
-      printf("SG { id: %d(%s)  slc: %i  qub: %i  ctrl: %i}\n", sg->gate->id,
-             gate_id_to_human(sg->gate->id), sg->position.slice,
-             sg->position.qubit, sg->control.some ? (int)sg->control.data : -1);
-    }
-    printf("<<<\n");
-  }
-
   OptimizerSettings opt_settings;
-  result_unwrap(optimizer_settings_init(&opt_settings, &circuit,
-                                        (double _Complex *)hamiltonian, 1e-2,
-                                        reparams.data, reparams.size, 1000));
+  result_unwrap(optimizer_settings_init(
+      &opt_settings, &circuit, (double _Complex *)hamiltonian, 1e-3,
+      reparams.data, reparams.size, option_from_uint(3000)));
   AdadeltaSettings ada_settings = optimizer_adadelta_get_default();
   Optimizer opt;
   result_unwrap(optimizer_init(&opt, opt_settings, ada_settings));
@@ -314,7 +306,8 @@ int main(void) {
   result_unwrap(circuit_run(&circuit, &zero_state));
 
   double norm = 0;
-  for (int i = 0; i < 64; ++i) norm += (double)(zero_state[i] * conj(zero_state[i]));
+  for (int i = 0; i < 64; ++i)
+    norm += (double)(zero_state[i] * conj(zero_state[i]));
   printf("NORM %e\n", norm);
 
   printf("PARAMETERS:\n");
