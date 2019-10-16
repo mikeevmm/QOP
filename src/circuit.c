@@ -439,7 +439,6 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
           unsigned int out = (in & ~gate_mask) | rev_out;
 
           // Set values
-          //printf("%d %d\n", in, out);
           output[out] += (*inout)[in] * coef;
 
           irrev_in += 1;

@@ -390,7 +390,7 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
   Vector reparams_to_gate_obj_ptr;
   vector_init(&reparams_to_gate_obj_ptr, sizeof(QopGateObject *), 0);
   bool any_reparam_given = false;
-  int max_iters = -1;
+  Option_Uint max_iters = option_none_uint();
 
   /*
     {
@@ -665,7 +665,8 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
           return NULL;
         }
 
-        max_iters = (int)PyFloat_AsDouble(max_iters_obj);
+        max_iters =
+            option_from_uint((unsigned int)PyFloat_AsDouble(max_iters_obj));
       }
     }
   }
@@ -682,7 +683,7 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
         case GateRy:
         case GateRz: {
           GateParameterization param;
-          double delta[] = {1./3.14159}; // 1 rad
+          double delta[] = {1. / 3.14159};  // 1 rad
           {
             Result init_r = optimizer_gate_param_init(
                 &param, &qop_gate->gate, 1, qop_gate->params, delta);

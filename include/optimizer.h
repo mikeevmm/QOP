@@ -18,6 +18,7 @@
 #include "include/circuit.h"
 #include "include/gate.h"
 #include "include/vector.h"
+#include "include/option.h"
 
 // Hyperparameters pertaining to the ADADELTA method.
 typedef struct AdadeltaSettings {
@@ -74,7 +75,7 @@ typedef struct OptimizerSettings {
   unsigned int reparams_count;
   GateParameterization *reparams;
   double _Complex *zero_state;  // The |000...> state of the circuit
-  int max_iterations;
+  Option_Uint max_iterations;
 } OptimizerSettings;
 
 // This is a purely internal use struct; it's used to identify the actual
@@ -110,7 +111,7 @@ Result optimizer_settings_init(OptimizerSettings *opt_settings,
                                double stop_at,
                                GateParameterization *parameterizations,
                                unsigned int parameterizations_count,
-                               int max_iterations);
+                               Option_Uint max_iterations);
 
 // Frees the internal memory allocated at the initialization of the
 // given `OptimizerSettings` object.

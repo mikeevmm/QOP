@@ -58,7 +58,7 @@ Result optimizer_settings_init(OptimizerSettings *opt_settings,
                                double stop_at,
                                GateParameterization *parameterizations,
                                unsigned int parameterizations_count,
-                               int max_iterations) {
+                               Option_Uint max_iterations) {
   if (opt_settings == NULL)
     return result_get_invalid_reason("given OptmizerSettings* is null");
   if (circuit == NULL)
@@ -345,9 +345,9 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
   // Optimization cycle:
   while (max_grad > opt_settings.stop_at) {
     // Max iteration?
-    if (opt_settings.max_iterations >= 0) {
+    if (opt_settings.max_iterations.some) {
       iter_count++;
-      if (iter_count >= (unsigned int)opt_settings.max_iterations) break;
+      if (iter_count >= opt_settings.max_iterations.data) break;
     }
 
     // Compute an adadelta update
@@ -505,12 +505,14 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
           dx_sqr_acc += (1. - ada_settings.rho) * pow(update, 2);
 
           // Apply update!
+          printf("%e ", *param_ptr);
           *param_ptr += update;
 
           // Flat index...
           ++flat_param_index;
         }
       }
+      printf("\n");
     }
   }
 
@@ -523,8 +525,8 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
   }
 
   OptimizationResult result;
-  if (opt_settings.max_iterations >= 0 &&
-      iter_count >= (unsigned int)opt_settings.max_iterations)
+  if (opt_settings.max_iterations.some &&
+      iter_count >= opt_settings.max_iterations.data)
     result.quit_on_max_iter = true;
   else
     result.quit_on_max_iter = false;
