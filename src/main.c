@@ -264,10 +264,6 @@ int main(void) {
     Iter qubits_iter = vector_iter_create(&qubits);
     Iter controls_iter = vector_iter_create(&controls);
     Option next;
-    // TODO: If this parameter is initially set to 0, the program
-    //  terminates immediately! This is likely due to 1st order
-    //  approximation of the derivative, which fails for a cos.
-    //  What to do?
     double delta[] = {1. / 3.1415926};
     while ((next = iter_next(&gates_iter)).some) {
       double param[] = {((double)rand() / RAND_MAX - 1.) * 3.1415926};
