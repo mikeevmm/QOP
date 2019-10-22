@@ -1,5 +1,8 @@
 #include "include/optimizer.h"
 
+#define PRINT_PARAM_ITER 0
+#define PRINT_ENERGY_ITER 0
+
 // Returns a default `AdadeltaSettings` struct.
 // The default values here passed are the same used in section 4.1. of
 // the ADADELTA paper (arXiv:1212.5701).
@@ -99,6 +102,7 @@ Result optimizer_settings_init(OptimizerSettings *opt_settings,
     {
       Result init_r = vector_init(&row, sizeof(OptimizerDCPackedRowElem), 0);
       if (!init_r.valid) {
+        vector_free(&ham_rows);
         free(zero_state);
         return init_r;
       }
@@ -328,7 +332,7 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
   // Initialize the gradient array
   // The parameters here are "flattened"
   double param_gradient[abs_param_count];
-  memset(param_gradient, 0, sizeof(param_gradient));
+  memset(param_gradient, 0, sizeof(double) * abs_param_count);
 
   // (Absolute) Max known component of gradient
   // used to terminate optimization cycle
@@ -339,7 +343,7 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
   double dx_sqr_acc = 0;
 
   // Iteration count; this will only be useful if there is a max
-  // iteration count allowd
+  // iteration count allowed
   unsigned long int iter_count = 0;
 
   // Optimization cycle:
@@ -388,7 +392,7 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
 
             // Initialize left buffer to |0>
             memcpy(buff_left, opt_settings.zero_state,
-                   sizeof(double _Complex) * (unsigned long int)state_size);
+                   sizeof(double _Complex) * state_size);
 
             // Simulate into left buffer
             {
@@ -507,10 +511,41 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
           // Apply update!
           *param_ptr += update;
 
+#if PRINT_PARAM_ITER
+          printf("%e ", *param_ptr);
+#endif
+
           // Flat index...
           ++flat_param_index;
         }
       }
+
+#if PRINT_PARAM_ITER
+      printf("\n");
+#endif
+
+#if PRINT_ENERGY_ITER
+      {
+        double _Complex energy = 0;
+        double _Complex current_phi_state[state_size];
+        memcpy(current_phi_state, opt_settings.zero_state,
+               sizeof(double _Complex) * (unsigned long int)state_size);
+        circuit_run(circuit, &current_phi_state);
+
+        for (unsigned int i = 0; i < opt_settings.hamiltonian.size; ++i) {
+          Vector *row = (Vector *)opt_settings.hamiltonian.data + i;
+          for (unsigned int u = 0; u < row->size; ++u) {
+            OptimizerDCPackedRowElem elem =
+                *((OptimizerDCPackedRowElem *)row->data + u);
+            unsigned int j = elem.j;
+            double _Complex value = elem.value;
+            energy +=
+                2 * conj(current_phi_state[i]) * value * current_phi_state[j];
+          }
+        }
+        printf("%e %e\n", creal(energy), cimag(energy));
+      }
+#endif
     }
   }
 

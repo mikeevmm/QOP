@@ -320,6 +320,27 @@ int main(void) {
     }
   }
 
+  printf("FINAL EXPECTATION VALUE:\n");
+  {
+    double _Complex energy = 0;
+    double _Complex current_phi_state[1U << 6U];
+    memcpy(current_phi_state, opt_settings.zero_state,
+           sizeof(double _Complex) * (unsigned long int)6);
+    circuit_run(&circuit, &current_phi_state);
+
+    for (unsigned int i = 0; i < opt_settings.hamiltonian.size; ++i) {
+      Vector *row = (Vector *)opt_settings.hamiltonian.data + i;
+      for (unsigned int u = 0; u < row->size; ++u) {
+        OptimizerDCPackedRowElem elem =
+            *((OptimizerDCPackedRowElem *)row->data + u);
+        unsigned int j = elem.j;
+        double _Complex value = elem.value;
+        energy += 2 * conj(current_phi_state[i]) * value * current_phi_state[j];
+      }
+    }
+    printf("%e %e\n", creal(energy), cimag(energy));
+  }
+
   optimizer_settings_free(&opt_settings);
   {
     Iter gates_iter = vector_iter_create(&gates);

@@ -6,8 +6,8 @@ import random
 
 random.seed(8081902)
 
-layer_count = 4
-spin_count = 4
+layer_count = 2
+spin_count = 6
 optimizer_settings = {
     'ada': {'rho': 0.95},
     'optimize': {
@@ -17,9 +17,9 @@ optimizer_settings = {
 }
 
 # Build the hamiltonian
-sx = np.matrix([[0, 1], [1, 0]])
-sy = np.matrix([[0, -1.0j], [1.j, 0]])
-sz = np.matrix([[1, 0], [0, -1]])
+sx = np.matrix([[0, 1], [1, 0]], dtype=np.complex)
+sy = np.matrix([[0, -1.0j], [1.j, 0]], dtype=np.complex)
+sz = np.matrix([[1, 0], [0, -1]], dtype=np.complex)
 
 # Return the matrix for a spin of type u (i.e. x, y, z) at position j,
 # for a q qubit spin ring
@@ -28,12 +28,12 @@ sz = np.matrix([[1, 0], [0, -1]])
 def suj(q, u, j):
     return np.kron(np.kron(np.eye(2**j), u), np.eye(2**(q - j - 1)))
 
-
 matrix = sum(suj(spin_count, sx, i) * suj(spin_count, sx, (i + 1) % spin_count) +
              suj(spin_count, sy, i) * suj(spin_count, sy, (i + 1) % spin_count) +
-             0.5 * suj(spin_count, sy, i) *
-             suj(spin_count, sy, (i + 1) % spin_count)
+             0.5 * suj(spin_count, sz, i) * suj(spin_count, sz, (i + 1) % spin_count)
              for i in range(spin_count))
+
+print(matrix)
 
 # Run the simulation
 c = qop.Circuit(spin_count)
@@ -56,13 +56,20 @@ for qubit in range(spin_count):
 start = time()
 results, broke = c.optimize(matrix, settings=optimizer_settings)
 end = time()
+
+print("results:")
 print(results)
 print(f"in {end - start}s")
 print(("" if broke else "not ") + "breaking after max iterations")
 
 print("output:")
 out = c.run([1] + [0] * (2**spin_count - 1))
-print(out)
+
+expct_value = 0
+for i in range(2**spin_count):
+    for j in range(2**spin_count):
+        expct_value += out[i].conjugate() * matrix[i, j] * out[j]
+print(expct_value)
 
 out = np.array(out, dtype=np.complex).T  # Column vector
 print("Out state 2-norm")

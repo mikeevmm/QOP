@@ -123,24 +123,22 @@ Result vector_extend_raw(Vector *v, void *head, size_t obj_count) {
   return result_get_valid_with_data(moved);
 }
 
-Result vector_pop(Vector *v) {
+Result vector_pop(Vector *v, void *into) {
   if (!v->init) {
     return result_get_invalid_reason("tried to pop uninitialized vector");
   }
 
-  void *popped_loc = (void *)malloc(v->obj_size);
-  if (!popped_loc) {
-    return result_get_invalid_reason("could not malloc");
-  }
-  void *moved =
-      memcpy(popped_loc, (char *)v->data + v->size * v->obj_size, v->obj_size);
-  if (!moved) {
-    return result_get_invalid_reason("could not memmove");
+  if (into == NULL) {
+    void *copied =
+        memcpy(into, (char *)v->data + v->size * v->obj_size, v->obj_size);
+    if (!copied) {
+      return result_get_invalid_reason("could not memcpy");
+    }
   }
   v->size -= 1;
   vector_resize(v, v->size);
 
-  return result_get_valid_with_data(popped_loc);
+  return result_get_valid_with_data(into);
 }
 
 Result vector_clean(Vector *v) {

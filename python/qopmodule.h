@@ -27,17 +27,22 @@ typedef struct QopCircuitObject {
 typedef struct QopGateObject {
   PyObject_HEAD Gate gate;
   double *params;
+  unsigned int param_count;
 } QopGateObject;
 
 static PyObject *qop_create_circuit(PyTypeObject *type, PyObject *args,
                                     PyObject *kwds);
+static void qop_circuit_obj_dealloc(QopCircuitObject *obj);
 static PyObject *qop_gate_create(PyTypeObject *type, PyObject *args,
                                  PyObject *kwds);
-static void qop_circuit_obj_dealloc(QopCircuitObject *obj);
 static void qop_gate_obj_dealloc(QopGateObject *obj);
 
 static PyObject *qop_circuit_add_gate(QopCircuitObject *self, PyObject *args,
                                       PyObject *kwds);
+static bool parse_optimization_settings(
+    PyObject *settings, QopCircuitObject *self, double _Complex *hamiltonian,
+    Vector *reparams_vec, Vector *reparams_to_obj_pointer,
+    OptimizerSettings *opt_settings, AdadeltaSettings *ada_settings);
 static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
                                       PyObject *kwds);
 static PyObject *qop_circuit_get_gates(QopCircuitObject *self);

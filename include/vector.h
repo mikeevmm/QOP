@@ -83,12 +83,14 @@ Result vector_extend(Vector *v, void *head, size_t obj_count);
 // striding `i` times from `head` in `v->obj_size` increments.
 Result vector_extend_raw(Vector *v, void *head, size_t obj_count);
 
-// Moves the last allocated element in the vector into it's own heap
-// location, returning the pointer to that location in memory, and
+// Moves the last allocated element in the vector into the provided location,
+// returning the pointer to that location in memory, and
 // resizes the vector accordingly.
-// Note that it is the user's responsability to then free the popped
-// element memory block.
-Result vector_pop(Vector *v);
+// Note that it is the user's responsability to ensure that the target
+// location is appropriate, and then free the popped element memory block.
+// If the copy is not to be made at all (and the popped value is to be
+// discarded), it is safe to pass `NULL` as `into`.
+Result vector_pop(Vector *v, void *into);
 
 // Removes all the elements from the vector (freeing the corresponding
 // heap memory), zeroing the capacity of the vector.

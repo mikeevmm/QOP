@@ -103,11 +103,11 @@ Result circuit_compact(Circuit *circuit) {
 
   // Number of gates in each slice
   unsigned int slice_gate_count[circuit->depth[1]];
-  memset(slice_gate_count, 0, sizeof(slice_gate_count));
+  memset(slice_gate_count, 0, sizeof(unsigned int) * circuit->depth[1]);
 
   // Current leftmost position available
   unsigned int leftmost[circuit->depth[0]];
-  memset(leftmost, 0, sizeof(leftmost));
+  memset(leftmost, 0, sizeof(unsigned int) * circuit->depth[0]);
 
   // Run over the `SoftGate`s and find the compacted position.
   // Update leftmost available positions accordingly.
@@ -312,15 +312,11 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
   }
 
   unsigned int qubits = (circuit->depth[0]);
-  unsigned int leftmost = 1U << (qubits - 1U);
   Vector slice_gates;
   vector_init(&slice_gates, sizeof(SoftGate *), 0);
 
   // Find how many/what the gates for this slice are
   for (unsigned int slice = 0; slice < circuit->depth[1]; ++slice) {
-    unsigned int gates_len =
-        *(unsigned int *)(vector_get_raw(&circuit->slice_gate_count, slice));
-
     {
       unsigned long int head_offset =
           slice * circuit->depth[0] * sizeof(SoftGate *);
@@ -335,7 +331,7 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
     // Output vector to be written to during computation; its value
     // is transferred to inout after a slice cycle
     double _Complex output[1 << qubits];
-    memset(output, 0, sizeof(output));
+    memset(output, 0, sizeof(double _Complex) * (1 << qubits));
 
     // Figure out what bits are relevant (gate-affected and controls)
     unsigned int gate_mask = 0;
