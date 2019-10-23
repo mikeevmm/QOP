@@ -4,15 +4,15 @@ from time import time
 import qop
 import random
 
-random.seed(8081902)
+#random.seed(8081902)
 
 layer_count = 2
 spin_count = 6
 optimizer_settings = {
     'ada': {'rho': 0.95},
     'optimize': {
-        'stop_at': 1e-4,
-        'max_iterations': 1000
+        'stop_at': 1e-8,
+        'max_iterations': -1
     }
 }
 
@@ -32,8 +32,6 @@ matrix = sum(suj(spin_count, sx, i) * suj(spin_count, sx, (i + 1) % spin_count) 
              suj(spin_count, sy, i) * suj(spin_count, sy, (i + 1) % spin_count) +
              0.5 * suj(spin_count, sz, i) * suj(spin_count, sz, (i + 1) % spin_count)
              for i in range(spin_count))
-
-print(matrix)
 
 # Run the simulation
 c = qop.Circuit(spin_count)

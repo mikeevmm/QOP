@@ -441,7 +441,7 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
 
               for (unsigned int i = 0; i < row->size; ++i) {
                 OptimizerDCPackedRowElem elem =
-                    *((OptimizerDCPackedRowElem *)row->data + i);
+                    *((OptimizerDCPackedRowElem *)(row->data) + i);
                 unsigned int k = elem.j;
                 double _Complex left_k = buff_left[k];
                 double _Complex right_k = buff_right[k];
@@ -539,8 +539,12 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
                 *((OptimizerDCPackedRowElem *)row->data + u);
             unsigned int j = elem.j;
             double _Complex value = elem.value;
-            energy +=
-                2 * conj(current_phi_state[i]) * value * current_phi_state[j];
+            if (i == j)
+              energy +=
+                  conj(current_phi_state[i]) * value * current_phi_state[j];
+            else
+              energy +=
+                  2 * conj(current_phi_state[i]) * value * current_phi_state[j];
           }
         }
         printf("%e %e\n", creal(energy), cimag(energy));

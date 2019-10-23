@@ -34,7 +34,20 @@ Result circuit_init(Circuit *circuit, unsigned int qubit_count) {
     Result vector_create_r =
         vector_init(&slice_gate_vector, sizeof(unsigned int), 0);
     if (!vector_create_r.valid) {
+      vector_free(&soft_gates_vector);
       return vector_create_r;
+    }
+  }
+
+  // Initialize the circuit info vector, which is only populated in the
+  // hardening stage
+  Vector info_vec;
+  {
+    Result init_r = vector_init(&info_vec, sizeof(CircuitSliceInfo), 0);
+    if (!init_r.valid) {
+      vector_free(&soft_gates_vector);
+      vector_free(&slice_gate_vector);
+      return init_r;
     }
   }
 
@@ -44,6 +57,7 @@ Result circuit_init(Circuit *circuit, unsigned int qubit_count) {
   circuit->soft_gates = soft_gates_vector;
   circuit->slice_gate_count = slice_gate_vector;
   circuit->hardened_gates = NULL;
+  circuit->slice_info_vec = info_vec;
 
   return result_get_valid_with_data(circuit);
 }
@@ -180,6 +194,14 @@ Result circuit_harden(Circuit *circuit) {
   // location.
   if (circuit->hardened_gates != NULL) {
     free(circuit->hardened_gates);
+    // Free previously added slice infos
+    Iter info_iter = vector_iter_create(&circuit->slice_info_vec);
+    Option next;
+    while ((next = iter_next(&info_iter)).some) {
+      CircuitSliceInfo *next_info = (CircuitSliceInfo *)next.data;
+      vector_free(&next_info->slice_sg_ptrs);
+    }
+    vector_free(&circuit->slice_info_vec);
   }
 
   // Allocate appropriate size...
@@ -210,6 +232,90 @@ Result circuit_harden(Circuit *circuit) {
             "soft gates memory position collision");
       }
       *(ptr_pos) = soft_gate;
+    }
+  }
+
+  // Figure out what bits are relevant (gate-affected and controls)
+  // for each slice
+
+  for (unsigned int slice_index = 0; slice_index < circuit->depth[1];
+       ++slice_index) {
+    Vector slice_gates;
+    {
+      Result init_r = vector_init(&slice_gates, sizeof(SoftGate *), 0);
+      if (!init_r.valid) {
+        // Something went wrong initializing the vector
+        free(circuit->hardened_gates);
+        vector_free(&circuit->slice_info_vec);
+        return init_r;
+      }
+    }
+
+    // Find what gates are in this slice by filtering out NULL gates in
+    // the hard representation
+    {
+      unsigned long int head_offset =
+          slice_index * circuit->depth[0] * sizeof(SoftGate *);
+      Iter slice_gates_iter =
+          iter_create((void *)((char *)circuit->hardened_gates + head_offset),
+                      sizeof(SoftGate *), circuit->depth[0]);
+      Filter slice_gates_filter =
+          filter_create(slice_gates_iter, _circuit_filter_is_soft_gate);
+      filter_into_vector(&slice_gates_filter, &slice_gates);
+    }
+
+    // Identify relevant bits in the computational basis
+    unsigned int gate_mask = 0;
+    unsigned int ctrl_gate_mask = 0;
+    unsigned int relevant_count = 0;
+    unsigned int ctrl_relevant_count = 0;
+    {
+      Iter gate_iter = vector_iter_create(&slice_gates);
+      Option next;
+      while ((next = iter_next(&gate_iter)).some) {
+        SoftGate *gate = *(SoftGate **)next.data;
+
+        unsigned int bit = 1U << gate->position.qubit;
+        gate_mask |= bit;
+        ctrl_gate_mask |= bit;
+        relevant_count += 1;
+        ctrl_relevant_count += 1;
+
+        if (gate->control.some) {
+          unsigned int ctrl_bit = 1U << gate->control.data;
+          if ((ctrl_gate_mask & ctrl_bit) !=
+              ctrl_gate_mask)  // Two gates could share the same control
+            ctrl_relevant_count += 1;
+          ctrl_gate_mask |= ctrl_bit;
+        }
+      }
+    }
+
+    // Create the slice info object
+    CircuitSliceInfo slice_info;
+    slice_info.slice_sg_ptrs = slice_gates;
+    slice_info.gate_mask = gate_mask;
+    slice_info.ctrl_gate_mask = ctrl_gate_mask;
+    slice_info.relevant_count = relevant_count;
+    slice_info.ctrl_relevant_count = ctrl_relevant_count;
+
+    // Push the info object into the circuit object
+    {
+      Result push_r = vector_push(&circuit->slice_info_vec, &slice_info);
+      if (!push_r.valid) {
+        // Something went wrong pushing
+        // Free previously added slice infos
+        Iter info_iter = vector_iter_create(&circuit->slice_info_vec);
+        Option next;
+        while ((next = iter_next(&info_iter)).some) {
+          CircuitSliceInfo *next_info = (CircuitSliceInfo *)next.data;
+          vector_free(&next_info->slice_sg_ptrs);
+        }
+        // Free components
+        vector_free(&slice_info.slice_sg_ptrs);
+        free(circuit->hardened_gates);
+        return push_r;
+      }
     }
   }
 
@@ -312,90 +418,33 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
   }
 
   unsigned int qubits = (circuit->depth[0]);
-  Vector slice_gates;
-  vector_init(&slice_gates, sizeof(SoftGate *), 0);
 
-  // Find how many/what the gates for this slice are
   for (unsigned int slice = 0; slice < circuit->depth[1]; ++slice) {
-    {
-      unsigned long int head_offset =
-          slice * circuit->depth[0] * sizeof(SoftGate *);
-      Iter slice_gates_iter =
-          iter_create((void *)((char *)circuit->hardened_gates + head_offset),
-                      sizeof(SoftGate *), circuit->depth[0]);
-      Filter slice_gates_filter =
-          filter_create(slice_gates_iter, _circuit_filter_is_soft_gate);
-      filter_into_vector(&slice_gates_filter, &slice_gates);
-    }
-
     // Output vector to be written to during computation; its value
     // is transferred to inout after a slice cycle
     double _Complex output[1 << qubits];
     memset(output, 0, sizeof(double _Complex) * (1 << qubits));
 
-    // Figure out what bits are relevant (gate-affected and controls)
-    unsigned int gate_mask = 0;
-    unsigned int ctrl_gate_mask = 0;
-    unsigned int relevant_count = 0;
-    unsigned int ctrl_relevant_count = 0;
-    {
-      Iter gate_iter = vector_iter_create(&slice_gates);
-      Option next;
-      while ((next = iter_next(&gate_iter)).some) {
-        SoftGate *gate = *(SoftGate **)next.data;
-
-        unsigned int bit = 1U << gate->position.qubit;
-        gate_mask |= bit;
-        ctrl_gate_mask |= bit;
-        relevant_count += 1;
-        ctrl_relevant_count += 1;
-
-        if (gate->control.some) {
-          unsigned int ctrl_bit = 1U << gate->control.data;
-          if ((ctrl_gate_mask & ctrl_bit) !=
-              ctrl_gate_mask)  // Two gates could share the same control
-            ctrl_relevant_count += 1;
-          ctrl_gate_mask |= ctrl_bit;
-        }
-      }
-    }
+    // Grab info about this slice
+    CircuitSliceInfo slice_info =
+        *(CircuitSliceInfo *)vector_get_raw(&circuit->slice_info_vec, slice);
 
     unsigned int rev_in = 0;
     for (unsigned int rev_in_perm = 0;
-         rev_in_perm < (1U << ctrl_relevant_count); ++rev_in_perm) {
+         rev_in_perm < (1U << slice_info.ctrl_relevant_count); ++rev_in_perm) {
       // Calculate next relevant bits of `in`
-      while ((rev_in & ctrl_gate_mask) != rev_in) {
-        // If mask if e.g.
-        // 1 0 1 0 0 1 0 1
-        // and current value is
-        // 0 0 1 0 0 1 1 1
-        // `affected_mask` will be the rightmost infringing propagated:
-        // 0 0 0 0 0 0 1 1
-        unsigned int affected_mask =
-            ((~ctrl_gate_mask & rev_in) & (-(~ctrl_gate_mask & rev_in))) |
-            ((~ctrl_gate_mask & rev_in) - 1);
-        unsigned int to_add = (~affected_mask & ctrl_gate_mask) &
-                              (-(~affected_mask & ctrl_gate_mask));
-        rev_in = (rev_in & ~affected_mask) + to_add;
-      }
+      rev_in = ith_under_mask(rev_in_perm, slice_info.ctrl_gate_mask);
 
       unsigned int rev_out = 0;
-      for (unsigned int rev_out_perm = 0; rev_out_perm < (1U << relevant_count);
-           ++rev_out_perm) {
+      for (unsigned int rev_out_perm = 0;
+           rev_out_perm < (1U << slice_info.relevant_count); ++rev_out_perm) {
         // Calculate next relevant bits of `out`
-        while ((rev_out & gate_mask) != rev_out) {
-          unsigned int affected_mask =
-              ((~gate_mask & rev_out) & (-(~gate_mask & rev_out))) |
-              ((~gate_mask & rev_out) - 1);
-          unsigned int to_add =
-              (~affected_mask & gate_mask) & (-(~affected_mask & gate_mask));
-          rev_out = (rev_out & ~affected_mask) + to_add;
-        }
+        rev_out = ith_under_mask(rev_out_perm, slice_info.gate_mask);
 
         // Perform common calculation
         double _Complex coef = 1.;
         {
-          Iter gates = vector_iter_create(&slice_gates);
+          Iter gates = vector_iter_create(&slice_info.slice_sg_ptrs);
           Option next;
           while ((next = iter_next(&gates)).some) {
             SoftGate *gate = *(SoftGate **)next.data;
@@ -405,7 +454,7 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
             bool out_bit = (rev_out >> gate->position.qubit) & 1;
             bool in_bit = (rev_in >> gate->position.qubit) & 1;
             if (cset)
-              coef *= gate->gate->matrix[out_bit][in_bit];
+              coef *= gate->gate->matrix[in_bit][out_bit];
             else
               coef *= 1U ^ out_bit ^ in_bit;
           }
@@ -415,45 +464,30 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
         // OR'd with `rev_in`
         unsigned int irrev_in = 0;
         for (unsigned int in_irrev_perm = 0;
-             in_irrev_perm < (1U << (qubits - ctrl_relevant_count));
+             in_irrev_perm < (1U << (qubits - slice_info.ctrl_relevant_count));
              ++in_irrev_perm) {
           // Calculate next `irrev_in`
-          // This looks different from `in` because we're considering
-          // not `ctrl_gate_mask`, but `~ctrl_gate_mask` as the mask.
-          while ((irrev_in & ~ctrl_gate_mask) != irrev_in) {
-            unsigned int affected_mask =
-                ((ctrl_gate_mask & irrev_in) & (-(ctrl_gate_mask & irrev_in))) |
-                ((ctrl_gate_mask & irrev_in) - 1);
-            unsigned int to_add = ~(affected_mask | ctrl_gate_mask) &
-                                  (-~(affected_mask | ctrl_gate_mask));
-            irrev_in = (irrev_in & ~affected_mask) + to_add;
-          }
+          // We're considering not `ctrl_gate_mask`, but `~ctrl_gate_mask` as
+          // the mask.
+          irrev_in =
+              ith_under_mask(in_irrev_perm, (~slice_info.ctrl_gate_mask) &
+                                                right_propagate(1U << qubits));
 
           // Composed `in` string
           unsigned int in = rev_in | irrev_in;
           // Bitflipped `out` string
-          unsigned int out = (in & ~gate_mask) | rev_out;
+          unsigned int out = (in & ~slice_info.gate_mask) | rev_out;
 
           // Set values
           output[out] += (*inout)[in] * coef;
-
-          irrev_in += 1;
         }
-
-        rev_out += 1;
       }
-
-      rev_in += 1;
     }
-
-    vector_clean(&slice_gates);
 
     void *copy =
         memcpy(*inout, output, sizeof(double _Complex) * (1UL << qubits));
     if (copy == NULL) return result_get_invalid_reason("memcpy failed");
   }
-
-  vector_free(&slice_gates);
 
   return result_get_valid_with_data(inout);
 }
@@ -463,6 +497,17 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
 Result circuit_free(Circuit *circuit) {
   if (circuit == NULL) {
     return result_get_invalid_reason("circuit pointer is null");
+  }
+
+  // Free slice info
+  {
+    Iter info_iter = vector_iter_create(&circuit->slice_info_vec);
+    Option next;
+    while ((next = iter_next(&info_iter)).some) {
+      CircuitSliceInfo *slice_info = (CircuitSliceInfo *)next.data;
+      vector_free(&slice_info->slice_sg_ptrs);
+    }
+    vector_free(&circuit->slice_info_vec);
   }
 
   vector_free(&circuit->soft_gates);

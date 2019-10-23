@@ -13,6 +13,7 @@
 #define QOP_CIRCUIT_H_
 
 #include <complex.h>
+#include "include/bits.h"
 #include "include/gate.h"
 #include "include/iter.h"
 #include "include/option.h"
@@ -33,11 +34,22 @@ typedef struct SoftGate {
   Gate* gate;
 } SoftGate;
 
+// Information on the relevant qubit lines in
+// each slice of the circuit
+typedef struct CircuitSliceInfo {
+  Vector slice_sg_ptrs;
+  unsigned int gate_mask;
+  unsigned int ctrl_gate_mask;
+  unsigned int relevant_count;
+  unsigned int ctrl_relevant_count;
+} CircuitSliceInfo;
+
 typedef struct Circuit {
   Vector soft_gates;
   Vector slice_gate_count;
   unsigned int depth[2];
   SoftGate** hardened_gates;
+  Vector slice_info_vec;
 } Circuit;
 
 // Gives a 1D index of the `SoftGate`'s position, by counting along each

@@ -59,8 +59,8 @@ static double _Complex gate_static_y[2][2] = {{0., -1. * _Complex_I},
                                               {1. * _Complex_I, 0.}};
 static double _Complex gate_static_z[2][2] = {{1., 0.}, {0., -1.}};
 static double _Complex gate_static_h[2][2] = {
-    {1.414213562373095, 1.414213562373095},
-    {1.414213562373095, -1.414213562373095}};
+    {0.70710678118654752, 0.70710678118654752},
+    {0.70710678118654752, -0.70710678118654752}};
 static double _Complex gate_static_sqrt_x[2][2] = {
     {0.5 + 0.5 * _Complex_I, 0.5 - 0.5 * _Complex_I},
     {0.5 - 0.5 * _Complex_I, 0.5 + 0.5 * _Complex_I}};

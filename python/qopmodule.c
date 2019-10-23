@@ -1445,6 +1445,7 @@ static PyObject *qop_circuit_run(QopCircuitObject *self, PyObject *args,
                                  PyObject *kwds) {
   // Parse incoming state
   double _Complex state_in[1U << self->qubit_count];
+  memset(state_in, 0, sizeof(double _Complex) * (1U << self->qubit_count));
 
   {
     // Parse argument tuple

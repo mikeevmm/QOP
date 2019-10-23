@@ -205,6 +205,44 @@ static const double _Complex hamiltonian[64][64] = {
      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3}};
 
 int main(void) {
+  // Smaller test
+  unsigned int qubit_count = 3;
+  Circuit circuit;
+  Vector gates;
+  vector_init(&gates, sizeof(Gate), 100);  // No reallocs >:(
+  result_unwrap(circuit_init(&circuit, qubit_count));
+  for (int line = 0; line < qubit_count; ++line) {
+    Gate h;
+    result_unwrap(gate_init_from_identifier(&h, GateH, NULL));
+    result_unwrap(circuit_add_gate(
+        &circuit, (Gate *)result_unwrap(vector_raw_push(&gates, &h)), line,
+        option_none_uint()));
+
+    for (int i = 2; i < 2 + qubit_count - line - 1; ++i) {
+      Gate rz;
+      double param[] = {2. * 3.1415926 / (double)(1 << i)};
+      result_unwrap(gate_init_from_identifier(&rz, GateRz, param));
+      result_unwrap(circuit_add_gate(&circuit, (Gate *)result_unwrap(vector_raw_push(&gates, &rz)),
+                                     line, option_from_uint(line + i - 1)));
+    }
+  }
+
+  // Create a random input
+  double _Complex input[1 << qubit_count];
+  memset(input, 0, sizeof(double _Complex) * (1 << qubit_count));
+  input[(unsigned int)(((double)rand() / RAND_MAX) * (1 << qubit_count))] = 1;
+
+  // Run
+  result_unwrap(circuit_compact(&circuit));
+  result_unwrap(circuit_harden(&circuit));
+  result_unwrap(circuit_run(&circuit, &input));
+
+  double twonorm = 0;
+  for (int i = 0; i < (1 << qubit_count); ++i)
+    twonorm += creal(conj(input[i]) * input[i]);
+
+  printf("%e\n", twonorm);
+/* 
   Circuit circuit;
   result_unwrap(circuit_init(&circuit, 6));
 
@@ -358,5 +396,5 @@ int main(void) {
     }
   }
   vector_free(&reparams);
-  circuit_free(&circuit);
+  circuit_free(&circuit); */
 }
