@@ -332,7 +332,7 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
   // Initialize the gradient array
   // The parameters here are "flattened"
   double param_gradient[abs_param_count];
-  memset(param_gradient, 0, sizeof(double) * abs_param_count);
+  //memset(param_gradient, 0, sizeof(double) * abs_param_count);
 
   // (Absolute) Max known component of gradient
   // used to terminate optimization cycle

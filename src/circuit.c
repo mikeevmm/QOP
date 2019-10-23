@@ -352,11 +352,11 @@ Result circuit_harden(Circuit *circuit) {
 // particular that the matrix corresponding to a gate can be thought of
 // in terms of projectors:
 //
-//       |0> |1>
+//       <0| <1|
 //     +-       -+
-// <0| |  a   b  |
+// |0> |  a   b  |
 //     |         |
-// <1| |  c   d  |
+// |1> |  c   d  |
 //     +-       -+
 //
 // Pseudocode of the SSS follows:
@@ -429,17 +429,27 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
     CircuitSliceInfo slice_info =
         *(CircuitSliceInfo *)vector_get_raw(&circuit->slice_info_vec, slice);
 
+    printf("Slice;\n");
+    printf("Mask (no control)  ");
+    bit_print(slice_info.gate_mask);
+    printf("Mask (yes control) ");
+    bit_print(slice_info.ctrl_gate_mask);
+
     unsigned int rev_in = 0;
     for (unsigned int rev_in_perm = 0;
          rev_in_perm < (1U << slice_info.ctrl_relevant_count); ++rev_in_perm) {
       // Calculate next relevant bits of `in`
       rev_in = ith_under_mask(rev_in_perm, slice_info.ctrl_gate_mask);
+      printf("Relevant in bits   ");
+      bit_print(rev_in);
 
       unsigned int rev_out = 0;
       for (unsigned int rev_out_perm = 0;
            rev_out_perm < (1U << slice_info.relevant_count); ++rev_out_perm) {
         // Calculate next relevant bits of `out`
         rev_out = ith_under_mask(rev_out_perm, slice_info.gate_mask);
+        printf("Relevant out bits  ");
+        bit_print(rev_out);
 
         // Perform common calculation
         double _Complex coef = 1.;
@@ -454,9 +464,9 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
             bool out_bit = (rev_out >> gate->position.qubit) & 1;
             bool in_bit = (rev_in >> gate->position.qubit) & 1;
             if (cset)
-              coef *= gate->gate->matrix[in_bit][out_bit];
+              coef *= gate->gate->matrix[out_bit][in_bit];
             else
-              coef *= 1U ^ out_bit ^ in_bit;
+              coef *= (double)(1U ^ out_bit ^ in_bit);
           }
         }
 
@@ -477,6 +487,11 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
           unsigned int in = rev_in | irrev_in;
           // Bitflipped `out` string
           unsigned int out = (in & ~slice_info.gate_mask) | rev_out;
+
+          printf("Final in string    ");
+          bit_print(in);
+          printf("Final out string   ");
+          bit_print(out);
 
           // Set values
           output[out] += (*inout)[in] * coef;
