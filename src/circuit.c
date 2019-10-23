@@ -274,7 +274,7 @@ Result circuit_harden(Circuit *circuit) {
       Option next;
       while ((next = iter_next(&gate_iter)).some) {
         SoftGate *gate = *(SoftGate **)next.data;
-
+        
         unsigned int bit = 1U << gate->position.qubit;
         gate_mask |= bit;
         ctrl_gate_mask |= bit;
@@ -429,27 +429,17 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
     CircuitSliceInfo slice_info =
         *(CircuitSliceInfo *)vector_get_raw(&circuit->slice_info_vec, slice);
 
-    printf("Slice;\n");
-    printf("Mask (no control)  ");
-    bit_print(slice_info.gate_mask);
-    printf("Mask (yes control) ");
-    bit_print(slice_info.ctrl_gate_mask);
-
-    unsigned int rev_in = 0;
+    unsigned int rev_in = 0; // Relevant bits of the considered "in" string
     for (unsigned int rev_in_perm = 0;
          rev_in_perm < (1U << slice_info.ctrl_relevant_count); ++rev_in_perm) {
       // Calculate next relevant bits of `in`
       rev_in = ith_under_mask(rev_in_perm, slice_info.ctrl_gate_mask);
-      printf("Relevant in bits   ");
-      bit_print(rev_in);
 
-      unsigned int rev_out = 0;
+      unsigned int rev_out = 0; // Relevant bits of the considered "out" string
       for (unsigned int rev_out_perm = 0;
            rev_out_perm < (1U << slice_info.relevant_count); ++rev_out_perm) {
         // Calculate next relevant bits of `out`
         rev_out = ith_under_mask(rev_out_perm, slice_info.gate_mask);
-        printf("Relevant out bits  ");
-        bit_print(rev_out);
 
         // Perform common calculation
         double _Complex coef = 1.;
@@ -487,11 +477,6 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
           unsigned int in = rev_in | irrev_in;
           // Bitflipped `out` string
           unsigned int out = (in & ~slice_info.gate_mask) | rev_out;
-
-          printf("Final in string    ");
-          bit_print(in);
-          printf("Final out string   ");
-          bit_print(out);
 
           // Set values
           output[out] += (*inout)[in] * coef;

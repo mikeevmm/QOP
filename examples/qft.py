@@ -3,7 +3,7 @@ import math
 import random
 import numpy as np
 
-qubit_count = 3
+qubit_count = 4
 
 circuit = qop.Circuit(qubit_count)
 for line in range(qubit_count):
@@ -29,10 +29,13 @@ print(sum(out_state[i].conjugate()*out_state[i]
           for i in range(2**qubit_count)))
 
 print("Verifying coefficients")
-for i, coef in enumerate(out_state):
-    predicted = 1/math.sqrt(2**qubit_count) * np.exp(2*math.pi*1.0j*x*i/2**qubit_count)
-    if abs(coef - predicted) > 1e-3:
-        print(f"Inconsistency of coefficent #{i}")
-        print(f"Expected {predicted} got {coef}")
+bit_mirror = lambda n: int(f'{{:0{qubit_count}b}}'.format(n)[::-1], 2)
+got = ((out_state[i]) for i in range(2**qubit_count))
+
+for basis, coef in enumerate(got):
+    expected = 1/np.sqrt(2**qubit_count) * np.exp(2*np.pi*1.0j*bit_mirror(x)*basis/2**qubit_count)
+    if abs(expected - coef) > 1e-4:
+        print("DISCREPANCY")
+        print(f"In |{basis}> expected {expected} got {coef}")
     else:
-        print(f"Coefficient {i} ✔")
+        print("✔")
