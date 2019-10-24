@@ -1058,7 +1058,6 @@ static bool parse_optimization_settings(
               reparam_given = true;
 
               // Decref the objects from this loop
-              Py_DECREF(delta_coll_iter);
               Py_DECREF(next_gate);
               Py_DECREF(next_delta_collection);
             }
@@ -1091,7 +1090,7 @@ static bool parse_optimization_settings(
         case GateRz: {
           // We know how to parameterize a rotation gate.
           GateParameterization param;         // The new param. to add
-          double delta[] = {1. / 3.1415926};  // ~1 rad.
+          double delta[] = {0.175};  // ~1 deg.
           {
             Result init_r = optimizer_gate_param_init(&param, &py_gate->gate, 1,
                                                       py_gate->params, delta);
