@@ -39,11 +39,11 @@ result = c.optimize([[1, 0, 0, 0],
                         [0, 0, 0, -1]],
                     settings={
     'ada': {
-        'rho': 0.99
+        'rho': 0.95
     },
     'optimize': {
         'gates': [x1],
-        'deltas': [[1/3.14159]],
+        'deltas': [[0.01]],
         'max_iterations': 1e4
     }
 })

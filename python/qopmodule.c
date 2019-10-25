@@ -1090,7 +1090,7 @@ static bool parse_optimization_settings(
         case GateRz: {
           // We know how to parameterize a rotation gate.
           GateParameterization param;         // The new param. to add
-          double delta[] = {0.175};  // ~1 deg.
+          double delta[] = {0.1};
           {
             Result init_r = optimizer_gate_param_init(&param, &py_gate->gate, 1,
                                                       py_gate->params, delta);

@@ -205,44 +205,6 @@ static const double _Complex hamiltonian[64][64] = {
      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3}};
 
 int main(void) {
-  // Smaller test
-  unsigned int qubit_count = 3;
-  Circuit circuit;
-  Vector gates;
-  vector_init(&gates, sizeof(Gate), 100);  // No reallocs >:(
-  result_unwrap(circuit_init(&circuit, qubit_count));
-  for (int line = 0; line < qubit_count; ++line) {
-    Gate h;
-    result_unwrap(gate_init_from_identifier(&h, GateH, NULL));
-    result_unwrap(circuit_add_gate(
-        &circuit, (Gate *)result_unwrap(vector_raw_push(&gates, &h)), line,
-        option_none_uint()));
-
-    for (int i = 2; i < 2 + qubit_count - line - 1; ++i) {
-      Gate rz;
-      double param[] = {2. * 3.1415926 / (double)(1 << i)};
-      result_unwrap(gate_init_from_identifier(&rz, GateRz, param));
-      result_unwrap(circuit_add_gate(&circuit, (Gate *)result_unwrap(vector_raw_push(&gates, &rz)),
-                                     line, option_from_uint(line + i - 1)));
-    }
-  }
-
-  // Create a random input
-  double _Complex input[1 << qubit_count];
-  memset(input, 0, sizeof(double _Complex) * (1 << qubit_count));
-  input[(unsigned int)(((double)rand() / RAND_MAX) * (1 << qubit_count))] = 1;
-
-  // Run
-  result_unwrap(circuit_compact(&circuit));
-  result_unwrap(circuit_harden(&circuit));
-  result_unwrap(circuit_run(&circuit, &input));
-
-  double twonorm = 0;
-  for (int i = 0; i < (1 << qubit_count); ++i)
-    twonorm += creal(conj(input[i]) * input[i]);
-
-  printf("%e\n", twonorm);
-/* 
   Circuit circuit;
   result_unwrap(circuit_init(&circuit, 6));
 
@@ -262,11 +224,11 @@ int main(void) {
 
   // First push all gates, to make sure their memory position doesn't
   // change
-  for (int l = 0; l < 2; ++l) {
+  for (int l = 0; l < 4; ++l) {
     for (int k = 0; k < 2; ++k) {
       for (int i = 0; i < 6; ++i) {
         Gate ry;
-        double param[] = {0.};
+        double param[] = {((double)rand() / RAND_MAX * 2. - 1.) * 3.1415926};
         result_unwrap(gate_init_from_identifier(&ry, GateRy, param));
         result_unwrap(vector_push(&gates, &ry));
         result_unwrap(vector_push(&qubits, &i));
@@ -302,9 +264,9 @@ int main(void) {
     Iter qubits_iter = vector_iter_create(&qubits);
     Iter controls_iter = vector_iter_create(&controls);
     Option next;
-    double delta[] = {1. / 3.1415926};
+    double delta[] = {0.1};
     while ((next = iter_next(&gates_iter)).some) {
-      double param[] = {((double)rand() / RAND_MAX - 1.) * 3.1415926};
+      double param[] = {((double)rand() / RAND_MAX * 2. - 1.) * 3.1415926};
       Gate *gate = (Gate *)next.data;
 
       // Reparam
@@ -328,7 +290,7 @@ int main(void) {
   OptimizerSettings opt_settings;
   result_unwrap(optimizer_settings_init(
       &opt_settings, &circuit, (double _Complex *)hamiltonian, 1e-3,
-      reparams.data, reparams.size, option_from_uint(3000)));
+      reparams.data, reparams.size, option_from_uint(4000)));
   AdadeltaSettings ada_settings = optimizer_adadelta_get_default();
   Optimizer opt;
   result_unwrap(optimizer_init(&opt, opt_settings, ada_settings));
@@ -373,7 +335,10 @@ int main(void) {
             *((OptimizerDCPackedRowElem *)row->data + u);
         unsigned int j = elem.j;
         double _Complex value = elem.value;
-        energy += 2 * conj(current_phi_state[i]) * value * current_phi_state[j];
+        if (i == j)
+          energy += conj(current_phi_state[i]) * value * current_phi_state[j];
+        else
+          energy += 2 * conj(current_phi_state[i]) * value * current_phi_state[j];
       }
     }
     printf("%e %e\n", creal(energy), cimag(energy));
@@ -396,5 +361,5 @@ int main(void) {
     }
   }
   vector_free(&reparams);
-  circuit_free(&circuit); */
+  circuit_free(&circuit);
 }

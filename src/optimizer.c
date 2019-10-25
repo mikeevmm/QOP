@@ -83,7 +83,7 @@ Result optimizer_settings_init(OptimizerSettings *opt_settings,
     }
     zero_state = mem;
     memset(zero_state, 0, state_size * sizeof(double _Complex));
-    zero_state[0] = (double _Complex)1.;
+    zero_state[0] = 1.;
   }
 
   // Create a compacted representation of the hamiltonian matrix.
@@ -320,19 +320,9 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
     unsigned int reparams_count = opt_settings.reparams_count;
     for (unsigned int reparam_index = 0; reparam_index < reparams_count;
          ++reparam_index) {
-      GateParameterization reparam = opt_settings.reparams[reparam_index];
-
-      for (unsigned int subparam_index = 0;
-           subparam_index < reparam.param_count; ++subparam_index) {
-        abs_param_count += 1;
-      }
+      abs_param_count += opt_settings.reparams[reparam_index].param_count;
     }
   }
-
-  // Initialize the gradient array
-  // The parameters here are "flattened"
-  double param_gradient[abs_param_count];
-  memset(param_gradient, 0, sizeof(double) * abs_param_count);
 
   // (Absolute) Max known component of gradient
   // used to terminate optimization cycle
@@ -355,6 +345,11 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
     }
 
     // Compute an adadelta update
+
+    // Initialize the gradient array
+    // The parameters here are "flattened"
+    double param_gradient[abs_param_count];
+    memset(param_gradient, 0, sizeof(double) * abs_param_count);
 
     // Buffers to write the result of the simulation at left and right
     // We don't need to initialize these right now because they're
@@ -473,9 +468,9 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
 
           // We need a full loop before applying the update, as the update
           // depends on the complete value of grad_sqr_acc
-        }
-      }
-    }
+        }  // Finished subparam
+      }    // Finished reparam
+    }      // Finished first loop
 
     // Store the dx_sqr_acc of the last full iteration loop, as
     // this is needed to compute the update of all the variables;
@@ -517,8 +512,8 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
 
           // Flat index...
           ++flat_param_index;
-        }
-      }
+        }  // Finished with subparam
+      }    // Finished with reparams
 
 #if PRINT_PARAM_ITER
       printf("\n");

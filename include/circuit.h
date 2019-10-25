@@ -48,7 +48,6 @@ typedef struct Circuit {
   Vector soft_gates;
   Vector slice_gate_count;
   unsigned int depth[2];
-  SoftGate** hardened_gates;
   Vector slice_info_vec;
 } Circuit;
 

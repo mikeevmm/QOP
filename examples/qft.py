@@ -3,7 +3,7 @@ import math
 import random
 import numpy as np
 
-qubit_count = 4
+qubit_count = 6
 
 circuit = qop.Circuit(qubit_count)
 for line in range(qubit_count):

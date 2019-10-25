@@ -56,7 +56,6 @@ Result circuit_init(Circuit *circuit, unsigned int qubit_count) {
   circuit->depth[1] = 0;
   circuit->soft_gates = soft_gates_vector;
   circuit->slice_gate_count = slice_gate_vector;
-  circuit->hardened_gates = NULL;
   circuit->slice_info_vec = info_vec;
 
   return result_get_valid_with_data(circuit);
@@ -192,8 +191,7 @@ Result circuit_harden(Circuit *circuit) {
   // Flat positions without a gate are left pointing to NULL; it's the
   // user's responsability to check whether they're pointing to a valid
   // location.
-  if (circuit->hardened_gates != NULL) {
-    free(circuit->hardened_gates);
+  if (circuit->slice_info_vec.size != 0) {
     // Free previously added slice infos
     Iter info_iter = vector_iter_create(&circuit->slice_info_vec);
     Option next;
@@ -207,6 +205,7 @@ Result circuit_harden(Circuit *circuit) {
   // Allocate appropriate size...
   // TODO: There's space for improvement here; for example with a simple
   //  BTree map
+  SoftGate **hardened_gates;
   {
     size_t malloc_size =
         circuit->depth[0] * circuit->depth[1] * sizeof(SoftGate *);
@@ -215,7 +214,7 @@ Result circuit_harden(Circuit *circuit) {
       return result_get_invalid_reason("could not malloc");
     }
     memset(new_malloc, 0, malloc_size);
-    circuit->hardened_gates = (SoftGate **)new_malloc;
+    hardened_gates = (SoftGate **)new_malloc;
   }
 
   // Iterate over the gates and copy pointers to appropriate location
@@ -225,9 +224,9 @@ Result circuit_harden(Circuit *circuit) {
     while ((next = iter_next(&gates_iter)).some) {
       SoftGate *soft_gate = (SoftGate *)next.data;
       unsigned int flat_position = soft_gate_flat_position(circuit, soft_gate);
-      SoftGate **ptr_pos = circuit->hardened_gates + flat_position;
+      SoftGate **ptr_pos = hardened_gates + flat_position;
       if (*(int *)ptr_pos != 0) {
-        free(circuit->hardened_gates);
+        free(hardened_gates);
         return result_get_invalid_reason(
             "soft gates memory position collision");
       }
@@ -245,7 +244,7 @@ Result circuit_harden(Circuit *circuit) {
       Result init_r = vector_init(&slice_gates, sizeof(SoftGate *), 0);
       if (!init_r.valid) {
         // Something went wrong initializing the vector
-        free(circuit->hardened_gates);
+        free(hardened_gates);
         vector_free(&circuit->slice_info_vec);
         return init_r;
       }
@@ -257,7 +256,7 @@ Result circuit_harden(Circuit *circuit) {
       unsigned long int head_offset =
           slice_index * circuit->depth[0] * sizeof(SoftGate *);
       Iter slice_gates_iter =
-          iter_create((void *)((char *)circuit->hardened_gates + head_offset),
+          iter_create((void *)((char *)hardened_gates + head_offset),
                       sizeof(SoftGate *), circuit->depth[0]);
       Filter slice_gates_filter =
           filter_create(slice_gates_iter, _circuit_filter_is_soft_gate);
@@ -274,7 +273,7 @@ Result circuit_harden(Circuit *circuit) {
       Option next;
       while ((next = iter_next(&gate_iter)).some) {
         SoftGate *gate = *(SoftGate **)next.data;
-        
+
         unsigned int bit = 1U << gate->position.qubit;
         gate_mask |= bit;
         ctrl_gate_mask |= bit;
@@ -313,7 +312,7 @@ Result circuit_harden(Circuit *circuit) {
         }
         // Free components
         vector_free(&slice_info.slice_sg_ptrs);
-        free(circuit->hardened_gates);
+        free(hardened_gates);
         return push_r;
       }
     }
@@ -413,8 +412,8 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
     return result_get_invalid_reason("circuit pointer is null");
   }
 
-  if (circuit->hardened_gates == NULL) {
-    return result_get_invalid_reason("circuit hardened_gates is null");
+  if (circuit->slice_info_vec.size == 0) {
+    return result_get_invalid_reason("CIrcuit slice_info_vec is empty");
   }
 
   unsigned int qubits = (circuit->depth[0]);
@@ -429,13 +428,13 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
     CircuitSliceInfo slice_info =
         *(CircuitSliceInfo *)vector_get_raw(&circuit->slice_info_vec, slice);
 
-    unsigned int rev_in = 0; // Relevant bits of the considered "in" string
+    unsigned int rev_in = 0;  // Relevant bits of the considered "in" string
     for (unsigned int rev_in_perm = 0;
          rev_in_perm < (1U << slice_info.ctrl_relevant_count); ++rev_in_perm) {
       // Calculate next relevant bits of `in`
       rev_in = ith_under_mask(rev_in_perm, slice_info.ctrl_gate_mask);
 
-      unsigned int rev_out = 0; // Relevant bits of the considered "out" string
+      unsigned int rev_out = 0;  // Relevant bits of the considered "out" string
       for (unsigned int rev_out_perm = 0;
            rev_out_perm < (1U << slice_info.relevant_count); ++rev_out_perm) {
         // Calculate next relevant bits of `out`
@@ -512,8 +511,6 @@ Result circuit_free(Circuit *circuit) {
 
   vector_free(&circuit->soft_gates);
   vector_free(&circuit->slice_gate_count);
-
-  if (circuit->hardened_gates != NULL) free(circuit->hardened_gates);
 
   return result_get_empty_valid();
 }

@@ -6,13 +6,13 @@ import random
 
 #random.seed(8081902)
 
-layer_count = 2
+layer_count = 4
 spin_count = 6
 optimizer_settings = {
     'ada': {'rho': 0.95},
     'optimize': {
-        'stop_at': 1e-8,
-        'max_iterations': -1
+        'stop_at':  1e-3,
+        'max_iterations': 4000
     }
 }
 
@@ -52,7 +52,13 @@ for qubit in range(spin_count):
     c.add_gate(ry, qubit)
 
 start = time()
-results, broke = c.optimize(matrix, settings=optimizer_settings)
+for delta in (0.1,):
+    modified_deltas = optimizer_settings.copy()
+    modified_deltas['optimize']['gates'] = ry_gates
+    modified_deltas['optimize']['deltas'] = [[delta] for _ in ry_gates]
+    results, broke = c.optimize(matrix, settings=modified_deltas)
+    out = np.array(c.run([1] + [0] * (2**spin_count - 1)))
+    print(np.conjugate(out.T) @ matrix @ out)
 end = time()
 
 print("results:")
