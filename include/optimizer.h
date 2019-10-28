@@ -17,8 +17,8 @@
 #include <complex.h>
 #include "include/circuit.h"
 #include "include/gate.h"
-#include "include/vector.h"
 #include "include/option.h"
+#include "include/vector.h"
 
 // Hyperparameters pertaining to the ADADELTA method.
 typedef struct AdadeltaSettings {
@@ -147,12 +147,28 @@ typedef struct OptimizationResult {
 Result optimization_result_as_result(OptimizationResult opt_result);
 OptimizationResult result_as_optimization_result(Result result);
 
+// Callback types for the optimization function.
+// These callbacks are useful for inspecting the evolution of the
+// optimization process, but are not a property of the optimization
+// itself, and so are passed to the `optimizer_optimize` function,
+// rather than included in the `Optimizer` object.
+// The signatures for these callbacks are, respectively,
+//  (flat parameter index, new value, context variables) -> void
+//  (expectation value of hamiltonian, context variables) -> void
+typedef void (*OptimizerParamCallback)(unsigned int, double, void *);
+typedef void (*OptimizerEnergyCallback)(_Complex double, void *);
+
 // Performs the optimization itself.
 // The final (optimized) parameters are stored in the
 // `GateParameterization` objects that were passed to the
 // `OptimizerSettings` at initialization, and information
 // about the optimization process is returned in the form
 // of an `OpimizationResult` object.
-OptimizationResult optimizer_optimize(Optimizer *optimizer);
+// The callbacks are optional, and can be NULL.
+// Passing a non-NULL callback may result in extra calculations.
+OptimizationResult optimizer_optimize(Optimizer *optimizer,
+                                      OptimizerParamCallback param_callback,
+                                      OptimizerEnergyCallback energy_callback,
+                                      void *callback_context);
 
 #endif  // QOP_OPTIMIZER_H_

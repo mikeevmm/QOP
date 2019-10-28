@@ -46,11 +46,12 @@ for qubit in range(spin_count):
     ry_gates.append(ry)
     c.add_gate(ry, qubit)
 
-start = time()
-results, broke = c.optimize(matrix)
-out = np.array(c.run([1] + [0] * (2**spin_count - 1)))
-print(np.conjugate(out.T) @ matrix @ out)
-end = time()
+with open('../test.txt', 'w') as test:
+    start = time()
+    results, broke = c.optimize(matrix, writer=test)
+    out = np.array(c.run([1] + [0] * (2**spin_count - 1)))
+    print(np.conjugate(out.T) @ matrix @ out)
+    end = time()
 
 print("results:")
 print(results)

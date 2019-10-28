@@ -1,8 +1,5 @@
 #include "include/optimizer.h"
 
-#define PRINT_PARAM_ITER 0
-#define PRINT_ENERGY_ITER 0
-
 // Returns a default `AdadeltaSettings` struct.
 // The default values here passed are the same used in section 4.1. of
 // the ADADELTA paper (arXiv:1212.5701).
@@ -301,7 +298,10 @@ OptimizationResult result_as_optimization_result(Result result) {
 //  \sum_{u=1}^{2^q} \qty[
 //  \sum_{k = u+1}^{2^q} \qty( 2 \Re{H_{uk} ({A_u^p}^* {A_k^p} - {B_u^p}^*
 //  {B_k^p})}) + \Re{ H_{uu} ({A_u^p} + {B_u^p})({A_u^p}^* - {B_u^p}^*) }] $$
-OptimizationResult optimizer_optimize(Optimizer *optimizer) {
+OptimizationResult optimizer_optimize(Optimizer *optimizer,
+                                      OptimizerParamCallback param_callback,
+                                      OptimizerEnergyCallback energy_callback,
+                                      void *callback_context) {
   const AdadeltaSettings ada_settings = optimizer->ada_settings;
   OptimizerSettings opt_settings = optimizer->opt_settings;
   Circuit *circuit = opt_settings.circuit;
@@ -463,6 +463,10 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
           param_gradient[flat_param_index] = grad_component;
           ++flat_param_index;
 
+          // Optionally report new parameter
+          if (param_callback != NULL)
+            param_callback(flat_param_index, *param_ptr, callback_context);
+
           // Max grad?
           if (fabs(grad_component) > max_grad) max_grad = fabs(grad_component);
 
@@ -506,21 +510,13 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
           // Apply update!
           *param_ptr += update;
 
-#if PRINT_PARAM_ITER
-          printf("%e ", *param_ptr);
-#endif
-
           // Flat index...
           ++flat_param_index;
         }  // Finished with subparam
       }    // Finished with reparams
 
-#if PRINT_PARAM_ITER
-      printf("\n");
-#endif
-
-#if PRINT_ENERGY_ITER
-      {
+      // Optionally calculate and report energy
+      if (energy_callback != NULL) {
         double _Complex energy = 0;
         double _Complex current_phi_state[state_size];
         memcpy(current_phi_state, opt_settings.zero_state,
@@ -542,9 +538,9 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer) {
                   2 * conj(current_phi_state[i]) * value * current_phi_state[j];
           }
         }
-        printf("%e %e\n", creal(energy), cimag(energy));
+
+        energy_callback(energy, callback_context);
       }
-#endif
     }
   }
 

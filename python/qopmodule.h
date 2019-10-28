@@ -54,6 +54,10 @@ static PyObject *qop_gate_reparameterize(QopGateObject *self, PyObject *args,
 static PyObject *qop_gate_get_parameters(QopGateObject *self);
 static PyObject *qop_gate_get_matrix(QopGateObject *self);
 
+static void qop_write_parameter(unsigned int flat_index, double param,
+                                void *context);
+static void qop_write_energy(_Complex double energy, void *context);
+
 static PyMemberDef qop_circuit_obj_members[] = {
     {"qubits", T_INT, offsetof(QopCircuitObject, qubit_count), READONLY,
      "Number of qubits (lines) in the circuit."},

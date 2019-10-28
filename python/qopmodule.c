@@ -1089,7 +1089,7 @@ static bool parse_optimization_settings(
         case GateRy:
         case GateRz: {
           // We know how to parameterize a rotation gate.
-          GateParameterization param;         // The new param. to add
+          GateParameterization param;  // The new param. to add
           double delta[] = {0.1};
           {
             Result init_r = optimizer_gate_param_init(&param, &py_gate->gate, 1,
@@ -1178,21 +1178,23 @@ static bool parse_optimization_settings(
 static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
                                       PyObject *kwds) {
   // Arguments to be parsed
-  PyObject *settings = NULL;
   PyObject *npy_hamiltonian;
+  PyObject *settings = NULL;
+  int writer_fd = -1;
 
   // Parse incoming arguments
   {
-    PyObject *hamiltonian_obj;
+    PyObject *hamiltonian_obj = NULL;
+    PyObject *given_writer = NULL;
 
-    char *kwarg_names[] = {"hamiltonian", "settings", NULL};
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|O!", kwarg_names,
-                                     &hamiltonian_obj, &PyDict_Type,
-                                     &settings)) {
+    char *kwarg_names[] = {"hamiltonian", "settings", "writer", NULL};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|O!O", kwarg_names,
+                                     &hamiltonian_obj, &PyDict_Type, &settings,
+                                     &given_writer)) {
       // Could not parse the arguments
       PyErr_SetString(PyExc_ValueError,
                       "could not parse arguments to circuit optimization; "
-                      "expected (hamiltonian, settings?)");
+                      "expected (hamiltonian, settings?, writer?)");
       return NULL;
     }
 
@@ -1225,6 +1227,17 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
             "hamiltonian is malformed; does not match circuit state size");
         return NULL;
       }
+    }
+
+    // Prepare the results writer if given
+    if (given_writer != NULL) {
+      // Ensure that the given object has a file descriptor
+      int fdescriptor = PyObject_AsFileDescriptor(given_writer);
+      if (fdescriptor < 0) {
+        PyErr_SetString(PyExc_ValueError, "invalid writer object");
+        return NULL;
+      }
+      writer_fd = fdescriptor;
     }
   }
 
@@ -1284,7 +1297,13 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
   // Perform actual optimization
   OptimizationResult optimization_result;
   {
-    optimization_result = optimizer_optimize(&optimizer);
+    if (writer_fd > 0) {
+      optimization_result =
+          optimizer_optimize(&optimizer, qop_write_parameter, qop_write_energy,
+                             (void *)&writer_fd);
+    } else {
+      optimization_result = optimizer_optimize(&optimizer, NULL, NULL, NULL);
+    }
     if (!optimization_result.valid) {
       // Optimization failed for some reason
       PyErr_SetString(QopError,
@@ -1674,4 +1693,29 @@ static PyObject *qop_gate_get_matrix(QopGateObject *self) {
     PyTuple_SetItem(result, i, row);
   }
   return result;
+}
+
+// Callback function for the optimizer, where the context given is the
+// file descriptor. This should write the parameter to the file
+static void qop_write_parameter(unsigned int flat_index, double param,
+                                void *context) {
+  int file_desc = *(int *)context;
+  char *stringed;
+  int byte_count = asprintf(&stringed, "%e ", param);
+  if (byte_count > 0) {
+    write(file_desc, stringed, byte_count);
+  }
+  free(stringed);
+}
+
+// Callback function for the optimizer, where the context given is the
+// file descriptor. This should write the energy to the file.
+static void qop_write_energy(_Complex double energy, void *context) {
+  int file_desc = *(int *)context;
+  char *stringed;
+  int byte_count = asprintf(&stringed, "%e %e\n", creal(energy), cimag(energy));
+  if (byte_count > 0) {
+    write(file_desc, stringed, byte_count);
+  }
+  free(stringed);
 }
