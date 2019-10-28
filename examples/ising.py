@@ -4,17 +4,10 @@ from time import time
 import qop
 import random
 
-#random.seed(8081902)
+# random.seed(8081902)
 
 layer_count = 4
 spin_count = 6
-optimizer_settings = {
-    'ada': {'rho': 0.95},
-    'optimize': {
-        'stop_at':  1e-3,
-        'max_iterations': 4000
-    }
-}
 
 # Build the hamiltonian
 sx = np.matrix([[0, 1], [1, 0]], dtype=np.complex)
@@ -28,16 +21,18 @@ sz = np.matrix([[1, 0], [0, -1]], dtype=np.complex)
 def suj(q, u, j):
     return np.kron(np.kron(np.eye(2**j), u), np.eye(2**(q - j - 1)))
 
+
 matrix = sum(suj(spin_count, sx, i) * suj(spin_count, sx, (i + 1) % spin_count) +
              suj(spin_count, sy, i) * suj(spin_count, sy, (i + 1) % spin_count) +
-             0.5 * suj(spin_count, sz, i) * suj(spin_count, sz, (i + 1) % spin_count)
+             0.5 * suj(spin_count, sz, i) *
+             suj(spin_count, sz, (i + 1) % spin_count)
              for i in range(spin_count))
 
 # Run the simulation
 c = qop.Circuit(spin_count)
 ry_gates = []
 for _ in range(layer_count):
-    for i in range(0, 1):
+    for i in range(2):
         for qubit in range(spin_count):
             ry = qop.Gate('ry', parameters=[
                 (random.random() - 0.5) * 2 * 3.1415926])
@@ -52,13 +47,9 @@ for qubit in range(spin_count):
     c.add_gate(ry, qubit)
 
 start = time()
-for delta in (0.1,):
-    modified_deltas = optimizer_settings.copy()
-    modified_deltas['optimize']['gates'] = ry_gates
-    modified_deltas['optimize']['deltas'] = [[delta] for _ in ry_gates]
-    results, broke = c.optimize(matrix, settings=modified_deltas)
-    out = np.array(c.run([1] + [0] * (2**spin_count - 1)))
-    print(np.conjugate(out.T) @ matrix @ out)
+results, broke = c.optimize(matrix)
+out = np.array(c.run([1] + [0] * (2**spin_count - 1)))
+print(np.conjugate(out.T) @ matrix @ out)
 end = time()
 
 print("results:")

@@ -10,8 +10,7 @@
 
 #define CPARTS(C) creal(C), cimag(C)
 
-static const double _Complex hamiltonian[64][64] = {
-    {3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+static const double _Complex hamiltonian[64][64] = {{3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
     {0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -338,7 +337,8 @@ int main(void) {
         if (i == j)
           energy += conj(current_phi_state[i]) * value * current_phi_state[j];
         else
-          energy += 2 * conj(current_phi_state[i]) * value * current_phi_state[j];
+          energy +=
+              2 * conj(current_phi_state[i]) * value * current_phi_state[j];
       }
     }
     printf("%e %e\n", creal(energy), cimag(energy));
