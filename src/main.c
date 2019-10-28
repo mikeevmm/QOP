@@ -10,7 +10,8 @@
 
 #define CPARTS(C) creal(C), cimag(C)
 
-static const double _Complex hamiltonian[64][64] = {{3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+static const double _Complex hamiltonian[64][64] = {
+    {3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
     {0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -223,7 +224,7 @@ int main(void) {
 
   // First push all gates, to make sure their memory position doesn't
   // change
-  for (int l = 0; l < 4; ++l) {
+  for (int l = 0; l < 5; ++l) {
     for (int k = 0; k < 2; ++k) {
       for (int i = 0; i < 6; ++i) {
         Gate ry;
@@ -293,7 +294,8 @@ int main(void) {
   AdadeltaSettings ada_settings = optimizer_adadelta_get_default();
   Optimizer opt;
   result_unwrap(optimizer_init(&opt, opt_settings, ada_settings));
-  result_unwrap(optimization_result_as_result(optimizer_optimize(&opt)));
+  result_unwrap(optimization_result_as_result(
+      optimizer_optimize(&opt, NULL, NULL, NULL)));
 
   double _Complex zero_state[64];
   memset(zero_state, 0, sizeof(double _Complex) * 64);

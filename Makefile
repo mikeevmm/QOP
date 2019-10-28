@@ -1,5 +1,5 @@
-EXE	= main.out
-DBG = gdb
+EXE	?= main.out
+DBG ?= gdb
 
 SRC_DIR = src
 OBJ_DIR = obj
