@@ -3,3 +3,6 @@ Todo:
   ✔ Make support in python interface to take file object and write energies/parameters as optimization is ongoing @done(19-10-29 13:41)
     Right now printing progress requires recompiling the library with the optimizer.c PRINT_* flags set
   ☐ Implement LBFGS optimization
+  ☐ Make writing parameters/energy separately optional
+  ☐ Unit test cases!
+
