@@ -35,6 +35,10 @@ typedef struct AdadeltaSettings {
 // `rho`       0.95
 AdadeltaSettings optimizer_adadelta_get_default();
 
+typedef struct LbfgsSettings {
+  // TODO:
+} LbfgsSettings;
+
 // Description of a parameterized gate to be optmimized with an
 // `Optimizer`.
 // The preffered way to initialize a new `GateParameterization` object
@@ -120,10 +124,14 @@ Result optimizer_settings_init(OptimizerSettings *opt_settings,
 void optimizer_settings_free(OptimizerSettings *opt_settings);
 
 // The optimizer object responsible to perform the optimization itself.
-// It is just a glorified pair of `OptimizerSettings` and `AdadeltaSettings`.
+// It is just a glorified pair of `OptimizerSettings` and some algorithm
+// settings struct.
 typedef struct Optimizer {
   OptimizerSettings opt_settings;
-  AdadeltaSettings ada_settings;
+  union OptimizerAlgoSettings {
+    AdadeltaSettings ada_settings;
+    LbfgsSettings lbfgs_settings;
+  } algo_settings;
 } Optimizer;
 
 // Initializes an `Optimizer` object.
@@ -170,5 +178,16 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer,
                                       OptimizerParamCallback param_callback,
                                       OptimizerEnergyCallback energy_callback,
                                       void *callback_context);
+
+// Perform an optimization using ADADELTA
+// TODO: Comment
+OptimizationResult optimizer_optimize_adadelta(
+    Optimizer *optimizer, OptimizerParamCallback param_callback,
+    OptimizerEnergyCallback energy_callback, void *callback_context);
+
+// TODO: Comment
+OptimizationResult optimizer_optimize_lbfgs(
+    Optimizer *optimizer, OptimizerParamCallback param_callback,
+    OptimizerEnergyCallback energy_callback, void *callback_context);
 
 #endif  // QOP_OPTIMIZER_H_

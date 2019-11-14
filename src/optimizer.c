@@ -154,7 +154,7 @@ void optimizer_settings_free(OptimizerSettings *opt_settings) {
 Result optimizer_init(Optimizer *optimizer, OptimizerSettings opt_settings,
                       AdadeltaSettings ada_settings) {
   optimizer->opt_settings = opt_settings;
-  optimizer->ada_settings = ada_settings;
+  optimizer->algo_settings.ada_settings = ada_settings;
   return result_get_empty_valid();
 }
 
@@ -174,36 +174,6 @@ OptimizationResult result_as_optimization_result(Result result) {
 
 // Performs the actual optimization of the parameters pointed to in the
 // `OptimizationSettings` object.
-// The optimization routine itself is just the ADADELTA algorithm, very
-// neatly presented in the paper and copied here for convenience:
-//
-//  =====================================================
-//  **Algorithm 1** Computing ADADELTA update at time $t$
-//  -----------------------------------------------------
-//  **Require**: Decay rate $\rho$, Constant $\epsilon$
-//  **Require**: Initial parameter $x_1$
-//  1: Initialize accumulation variables $E[g^2]_0 = 0$,
-//     $E[\Delta x^2]_0 = 0$
-//  2: **for** $t=1$ **do** %% Loop over # of updates
-//  3:    Compute Gradient: $g_t$
-//  4:    Accumulate Gradient:
-//       $E[g^2]_t = \rho E[g^2]_{t-1} + (1 - \rho) g_t^2
-//  5:    Compute Update:
-//       $\Delta x_t = -\frac{RMS[\Delta x]_{t-1}}{RMS[g]_t} g_t$
-//  6:    Accumulate Updates:
-//       $E[\Delta x^2]_t = \rho E[\Delta x^2]_{t-1} +
-//                                       (1 - \rho) \Delta x_t^2$
-//  7:    Apply Update: $x_{t+1} = x_t + \Delta x_t$
-//  =====================================================
-//
-// In this particular case, the "position" vector is considered to be
-// the vector of all concatenated parameters, and the computation of the
-// gradient is based on a simple finite difference approximation, with
-// further algebraic optimization (see below). Further, it is also of
-// notice that some of the above steps were compacted into a single
-// pass over the gates (since the above algorithm is phrased "vectorially",
-// while the programmatic approach is component-wise). Such compactions
-// are commented appropriately inline.
 // The gradient calculation routine is as follows:
 //
 // 1. Offset each parameter $\theta_i$ by $+\Delta_i$, making the
@@ -302,7 +272,46 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer,
                                       OptimizerParamCallback param_callback,
                                       OptimizerEnergyCallback energy_callback,
                                       void *callback_context) {
-  const AdadeltaSettings ada_settings = optimizer->ada_settings;
+  // TODO: Choose optimization algorithm
+  // For now go with ADADELTA
+  optimizer_optimize_adadelta(optimizer, param_callback, energy_callback,
+                              callback_context);
+}
+
+// Performs a circuit optimization using the ADADELTA algorithm, very
+// neatly presented in the paper and copied here for convenience:
+//
+//  =====================================================
+//  **Algorithm 1** Computing ADADELTA update at time $t$
+//  -----------------------------------------------------
+//  **Require**: Decay rate $\rho$, Constant $\epsilon$
+//  **Require**: Initial parameter $x_1$
+//  1: Initialize accumulation variables $E[g^2]_0 = 0$,
+//     $E[\Delta x^2]_0 = 0$
+//  2: **for** $t=1$ **do** %% Loop over # of updates
+//  3:    Compute Gradient: $g_t$
+//  4:    Accumulate Gradient:
+//       $E[g^2]_t = \rho E[g^2]_{t-1} + (1 - \rho) g_t^2
+//  5:    Compute Update:
+//       $\Delta x_t = -\frac{RMS[\Delta x]_{t-1}}{RMS[g]_t} g_t$
+//  6:    Accumulate Updates:
+//       $E[\Delta x^2]_t = \rho E[\Delta x^2]_{t-1} +
+//                                       (1 - \rho) \Delta x_t^2$
+//  7:    Apply Update: $x_{t+1} = x_t + \Delta x_t$
+//  =====================================================
+//
+// In this particular case, the "position" vector is considered to be
+// the vector of all concatenated parameters, and the computation of the
+// gradient is based on a simple finite difference approximation, with
+// further algebraic optimization (see below). Further, it is also of
+// notice that some of the above steps were compacted into a single
+// pass over the gates (since the above algorithm is phrased "vectorially",
+// while the programmatic approach is component-wise). Such compactions
+// are commented appropriately inline.
+OptimizationResult optimizer_optimize_adadelta(
+    Optimizer *optimizer, OptimizerParamCallback param_callback,
+    OptimizerEnergyCallback energy_callback, void *callback_context) {
+  const AdadeltaSettings ada_settings = optimizer->algo_settings.ada_settings;
   OptimizerSettings opt_settings = optimizer->opt_settings;
   Circuit *circuit = opt_settings.circuit;
   const unsigned int state_size = 1U << circuit->depth[0];
