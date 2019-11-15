@@ -10,6 +10,38 @@ AdadeltaSettings optimizer_adadelta_get_default() {
   return ada_default;
 }
 
+// Returns a default `LbfgsSettings` struct.
+// TODO: Comment
+LbfgsSettings optimizer_lbfgs_get_default() {
+  LbfgsSettings lbfgs_settings;
+  return lbfgs_settings;
+}
+
+// TODO: Comment
+Result optimizer_algo_settings_init(OptimizerAlgoSettings *algo_settings,
+                                      OptimizerAlgorithm algorithm,
+                                      void *specific_settings) {
+  algo_settings->algorithm = algorithm;
+  void *cpy_result;
+  switch (algorithm) {
+    case AlgoAdadelta: {
+      cpy_result = memcpy(&algo_settings->specific.ada_settings, specific_settings,
+             sizeof(AdadeltaSettings));
+    } break;
+    case AlgoLbfgs: {
+      cpy_result = memcpy(&algo_settings->specific.lbfgs_settings, specific_settings,
+             sizeof(LbfgsSettings));
+    } break;
+    default:
+      return result_get_invalid_reason("unknown algorithm");
+      break;
+  }
+  if (cpy_result == NULL) {
+    return result_get_invalid_reason("failed to memcpy");
+  }
+  return result_get_empty_valid();
+}
+
 // Initializes a new `GateParameterization` object.
 // There are heap memory allocations to copy `params` and `deltas` into
 // which should later be freed with `optimizer_gate_param_free`. That
@@ -149,12 +181,12 @@ void optimizer_settings_free(OptimizerSettings *opt_settings) {
 }
 
 // Initializes a new `Optimizer` object.
-// This is just a glorified (`OptimizerSettings`, `AdadeltaSettings`)
+// This is just a glorified (`OptimizerSettings`, `OptimizerAlgoSettings`)
 // pair.
 Result optimizer_init(Optimizer *optimizer, OptimizerSettings opt_settings,
-                      AdadeltaSettings ada_settings) {
+                      OptimizerAlgoSettings algo_settings) {
   optimizer->opt_settings = opt_settings;
-  optimizer->algo_settings.ada_settings = ada_settings;
+  optimizer->algo_settings = algo_settings;
   return result_get_empty_valid();
 }
 
@@ -272,10 +304,20 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer,
                                       OptimizerParamCallback param_callback,
                                       OptimizerEnergyCallback energy_callback,
                                       void *callback_context) {
-  // TODO: Choose optimization algorithm
-  // For now go with ADADELTA
-  optimizer_optimize_adadelta(optimizer, param_callback, energy_callback,
-                              callback_context);
+  switch (optimizer->algo_settings.algorithm) {
+    case AlgoAdadelta:
+      return optimizer_optimize_adadelta(optimizer, param_callback,
+                                         energy_callback, callback_context);
+      break;
+    case AlgoLbfgs:
+      return optimizer_optimize_lbfgs(optimizer, param_callback,
+                                      energy_callback, callback_context);
+      break;
+    default:
+      return result_as_optimization_result(
+          result_get_invalid_reason("Unknown algorithm."));
+      break;
+  }
 }
 
 // Performs a circuit optimization using the ADADELTA algorithm, very
@@ -311,7 +353,8 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer,
 OptimizationResult optimizer_optimize_adadelta(
     Optimizer *optimizer, OptimizerParamCallback param_callback,
     OptimizerEnergyCallback energy_callback, void *callback_context) {
-  const AdadeltaSettings ada_settings = optimizer->algo_settings.ada_settings;
+  const AdadeltaSettings ada_settings =
+      optimizer->algo_settings.specific.ada_settings;
   OptimizerSettings opt_settings = optimizer->opt_settings;
   Circuit *circuit = opt_settings.circuit;
   const unsigned int state_size = 1U << circuit->depth[0];
@@ -570,4 +613,11 @@ OptimizationResult optimizer_optimize_adadelta(
   result.valid = true;
   result.content.data = circuit;
   return result;
+}
+
+OptimizationResult optimizer_optimize_lbfgs(
+    Optimizer *optimizer, OptimizerParamCallback param_callback,
+    OptimizerEnergyCallback energy_callback, void *callback_context) {
+  // TODO
+  return result_as_optimization_result(result_get_invalid_reason("not implemented"));
 }

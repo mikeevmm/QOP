@@ -36,8 +36,31 @@ typedef struct AdadeltaSettings {
 AdadeltaSettings optimizer_adadelta_get_default();
 
 typedef struct LbfgsSettings {
+  // Currently empty
   // TODO:
 } LbfgsSettings;
+
+// TODO:
+LbfgsSettings optimizer_lbfgs_get_default();
+
+typedef enum OptimizerAlgorithm {
+  AlgoAdadelta,
+  AlgoLbfgs,
+} OptimizerAlgorithm;
+
+typedef struct OptimizerAlgoSettings {
+  OptimizerAlgorithm algorithm;
+  union {
+    AdadeltaSettings ada_settings;
+    LbfgsSettings lbfgs_settings;
+  } specific;
+} OptimizerAlgoSettings;
+
+// TODO:
+// This copies the specific settings!
+Result optimizer_algo_settings_init(
+    OptimizerAlgoSettings *algo_settings, OptimizerAlgorithm algorithm,
+    void *specific_settings);
 
 // Description of a parameterized gate to be optmimized with an
 // `Optimizer`.
@@ -128,17 +151,14 @@ void optimizer_settings_free(OptimizerSettings *opt_settings);
 // settings struct.
 typedef struct Optimizer {
   OptimizerSettings opt_settings;
-  union OptimizerAlgoSettings {
-    AdadeltaSettings ada_settings;
-    LbfgsSettings lbfgs_settings;
-  } algo_settings;
+  OptimizerAlgoSettings algo_settings;
 } Optimizer;
 
 // Initializes an `Optimizer` object.
 // There are no internal memory allocation concerns with the `Optimizer`
 // object.
 Result optimizer_init(Optimizer *optimizer, OptimizerSettings opt_settings,
-                      AdadeltaSettings ada_settings);
+                      OptimizerAlgoSettings algo_settings);
 
 // Information about the results of an optimization.
 // The structure is that of a simple `Result`, with extra fields specific

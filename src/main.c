@@ -291,9 +291,14 @@ int main(void) {
   result_unwrap(optimizer_settings_init(
       &opt_settings, &circuit, (double _Complex *)hamiltonian, 1e-3,
       reparams.data, reparams.size, option_from_uint(4000)));
-  AdadeltaSettings ada_settings = optimizer_adadelta_get_default();
+  OptimizerAlgoSettings algo_settings;
+  {
+    AdadeltaSettings ada_settings = optimizer_adadelta_get_default();
+    optimizer_algo_settings_init(&algo_settings, AlgoAdadelta,
+                                 (void *)(&ada_settings));
+  }
   Optimizer opt;
-  result_unwrap(optimizer_init(&opt, opt_settings, ada_settings));
+  result_unwrap(optimizer_init(&opt, opt_settings, algo_settings));
   result_unwrap(optimization_result_as_result(
       optimizer_optimize(&opt, NULL, NULL, NULL)));
 
