@@ -112,7 +112,7 @@ Result dequeue_pop_back(Dequeue *dequeue, void *into) {
   if (dequeue->size == 0) return result_get_invalid_reason("dequeue is empty");
 
   // Memcpy relevant element
-  char *elem_pos = (char *)(dequeue->head.some) +
+  char *elem_pos = (char *)(dequeue->head.data) +
                    dequeue->head_index * dequeue->element_size;
   memcpy(into, (void *)elem_pos, dequeue->element_size);
 

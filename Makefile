@@ -53,7 +53,8 @@ check:
 	valgrind --leak-check=full ./$(EXE)
 
 $(TEST_SRC): $(TEST_DIR)/%.c: $(OBJ)
-	OPT="$(CDBGFLAGS)" $(CC) $(CPPFLAGS) $(OPT) $(CFLAGS) -c $@ -o $(OBJ_DIR)/$*.o
+	make debug
+	$(CC) $(CPPFLAGS) $(CDBGFLAGS) $(CFLAGS) -c $@ -o $(OBJ_DIR)/$*.o
 	$(CC) $(LDFLAGS) $^ $(OBJ_DIR)/$*.o $(LDLIBS) -o $(TEST_DIR)/$*.out
 	$(TEST_DIR)/$*.out
 	rm $(OBJ_DIR)/$*.o
