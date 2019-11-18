@@ -1,28 +1,16 @@
 #include "include/dequeue.h"
 
-Result dequeue_init(Dequeue *dequeue, unsigned int element_size,
-                    unsigned int initial_capacity) {
+Result dequeue_init(Dequeue *dequeue, unsigned int element_size) {
   // Very basic sanitizing
   if (dequeue == NULL)
     return result_get_invalid_reason("given *dequeue is NULL");
 
-  // Alocate memory to be the storage for the queue;
-  // If 0 was specified, skip this step
-  Option allocated;
-  if (initial_capacity > 0) {
-    void *alloc = malloc(initial_capacity * element_size);
-    if (alloc == NULL) return result_get_invalid_reason("could not malloc");
-    allocated = option_some_with_data(alloc);
-  } else {
-    allocated = option_none();
-  }
-
   // Initialize the struct
-  dequeue->head = allocated;
+  dequeue->head = option_none();
   dequeue->element_size = element_size;
   dequeue->head_index = 0;
   dequeue->size = 0;
-  dequeue->capacity = initial_capacity;
+  dequeue->capacity = 0;
 
   return result_get_empty_valid();
 }
@@ -49,24 +37,14 @@ Result dequeue_resize(Dequeue *dequeue, unsigned int fits) {
       char *actual_head = (char *)(dequeue->head.data) +
                           dequeue->head_index * dequeue->element_size;
       // Copy from `actual_head` to end
-      {
-        void *cpy_result = memcpy(
-            new_mem, (void *)actual_head,
-            (dequeue->size - dequeue->head_index) * dequeue->element_size);
-        if (cpy_result == NULL) {
-          free(new_mem);
-          return result_get_invalid_reason("could not memcpy");
-        }
-      }
+      memcpy(new_mem, (void *)actual_head,
+             (dequeue->capacity - dequeue->head_index) * dequeue->element_size);
       // Copy from end to `actual_head`
-      {
-        void *cpy_result = memcpy(new_mem, dequeue->head.data,
-                                  dequeue->head_index * dequeue->element_size);
-        if (cpy_result == NULL) {
-          free(new_mem);
-          return result_get_invalid_reason("could not memcpy");
-        }
-      }
+      char *continuing =
+          (char *)new_mem +
+          (dequeue->capacity - dequeue->head_index) * dequeue->element_size;
+      memcpy((void *)continuing, dequeue->head.data,
+             dequeue->head_index * dequeue->element_size);
     }  // else There was no allocated memory; no sorting/copying
 
     dequeue->head = option_some_with_data(new_mem);

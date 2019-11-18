@@ -71,4 +71,4 @@ endif
 py_test:
 	gdb -q -ex start --args python3 $(TEST_DIR)/test_ext.py
 
-.PHONY: all clean test
+.PHONY: all clean $(TEST_SRC)

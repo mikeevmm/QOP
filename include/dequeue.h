@@ -17,10 +17,7 @@ typedef struct Dequeue {
 } Dequeue;
 
 // Initializes a double ended queue.
-// The initial capcity can be `0`, but this might result in a larger
-// number of (re)allocations.
-Result dequeue_init(Dequeue *dequeue, unsigned int element_size,
-                    unsigned int initial_capacity);
+Result dequeue_init(Dequeue *dequeue, unsigned int element_size);
 
 // Reallocates memory internally so that dequeue can fit `fits`
 // elements.
