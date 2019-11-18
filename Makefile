@@ -52,8 +52,7 @@ check:
 	make all
 	valgrind --leak-check=full ./$(EXE)
 
-$(TEST_SRC): $(TEST_DIR)/%.c: $(OBJ)
-	make debug
+$(TEST_SRC): $(TEST_DIR)/%.c: $(filter-out $(OBJ_DIR)/main.o, $(OBJ))
 	$(CC) $(CPPFLAGS) $(CDBGFLAGS) $(CFLAGS) -c $@ -o $(OBJ_DIR)/$*.o
 	$(CC) $(LDFLAGS) $^ $(OBJ_DIR)/$*.o $(LDLIBS) -o $(TEST_DIR)/$*.out
 	$(TEST_DIR)/$*.out
@@ -72,4 +71,4 @@ endif
 py_test:
 	gdb -q -ex start --args python3 $(TEST_DIR)/test_ext.py
 
-.PHONY: all clean
+.PHONY: all clean test
