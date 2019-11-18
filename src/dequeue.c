@@ -23,6 +23,8 @@ Result dequeue_init(Dequeue *dequeue, unsigned int element_size,
   dequeue->head_index = 0;
   dequeue->size = 0;
   dequeue->capacity = initial_capacity;
+
+  return result_get_empty_valid();
 }
 
 Result dequeue_resize(Dequeue *dequeue, unsigned int fits) {
@@ -99,6 +101,8 @@ Result dequeue_push_front(Dequeue *dequeue, void *element) {
       (char *)(dequeue->head.data) + push_index * dequeue->element_size;
   memcpy((void *)push_pos, element, dequeue->element_size);
 
+  dequeue->size += 1;
+
   return result_get_empty_valid();
 }
 
@@ -119,7 +123,7 @@ Result dequeue_pop_back(Dequeue *dequeue, void *into) {
   dequeue->size -= 1;
 
   // Shrink if possible
-  Result resize_result = dequeue_resize(dequeue_resize, dequeue->size);
+  Result resize_result = dequeue_resize(dequeue, dequeue->size);
   if (!resize_result.valid) return resize_result;
 
   return result_get_empty_valid();
