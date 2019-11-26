@@ -1,6 +1,6 @@
 #include "include/dequeue.h"
 
-Result dequeue_init(Dequeue *dequeue, unsigned int element_size) {
+Result dequeue_init(Dequeue *dequeue, long unsigned int element_size) {
   // Very basic sanitizing
   if (dequeue == NULL)
     return result_get_invalid_reason("given *dequeue is NULL");
@@ -13,6 +13,13 @@ Result dequeue_init(Dequeue *dequeue, unsigned int element_size) {
   dequeue->capacity = 0;
 
   return result_get_empty_valid();
+}
+
+void dequeue_free(Dequeue *dequeue) {
+  if (!dequeue->head.some) return;
+  free(dequeue->head.data);
+  dequeue->capacity = 0;
+  dequeue->size = 0;
 }
 
 Result dequeue_resize(Dequeue *dequeue, unsigned int fits) {
@@ -90,9 +97,11 @@ Result dequeue_pop_back(Dequeue *dequeue, void *into) {
   if (dequeue->size == 0) return result_get_invalid_reason("dequeue is empty");
 
   // Memcpy relevant element
-  char *elem_pos = (char *)(dequeue->head.data) +
-                   dequeue->head_index * dequeue->element_size;
-  memcpy(into, (void *)elem_pos, dequeue->element_size);
+  if (into != NULL) {
+    char *elem_pos = (char *)(dequeue->head.data) +
+                     dequeue->head_index * dequeue->element_size;
+    memcpy(into, (void *)elem_pos, dequeue->element_size);
+  }
 
   // Offset head_index; decrease size
   // There's no need to "delete" the popped element; it will be freed or
@@ -105,4 +114,51 @@ Result dequeue_pop_back(Dequeue *dequeue, void *into) {
   if (!resize_result.valid) return resize_result;
 
   return result_get_empty_valid();
+}
+
+static Option dequeue_btf_next_fn(Iter *iter, unsigned int pos) {
+  Dequeue *dequeue = (Dequeue *)iter->context;
+  if (dequeue->size == 0) return option_none();
+  if (pos >= dequeue->size) return option_none();
+  unsigned int actual_index = (dequeue->head_index + pos) % dequeue->capacity;
+  return option_some_with_data((void *)((char *)dequeue->head.data +
+                                        actual_index * dequeue->element_size));
+}
+
+Iter dequeue_into_iterator_btf(Dequeue *dequeue) {
+  Iter dequeue_iter;
+  dequeue_iter.context = (void *)dequeue;
+  dequeue_iter.next_fn = dequeue_btf_next_fn;
+  dequeue_iter.free_fn = NULL;
+  dequeue_iter.position = 0;
+  return dequeue_iter;
+}
+
+static Option dequeue_ftb_next_fn(Iter *iter, unsigned int pos) {
+  Dequeue *dequeue = (Dequeue *)iter->context;
+  if (dequeue->size == 0) return option_none();
+  if (pos >= dequeue->size) return option_none();
+  unsigned int actual_index =
+      (dequeue->head_index + (dequeue->size - 1 - pos)) % dequeue->capacity;
+  return option_some_with_data((void *)((char *)dequeue->head.data +
+                                        actual_index * dequeue->element_size));
+}
+
+Iter dequeue_into_iterator_ftb(Dequeue *dequeue) {
+  Iter dequeue_iter;
+  dequeue_iter.context = (void *)dequeue;
+  dequeue_iter.next_fn = dequeue_ftb_next_fn;
+  dequeue_iter.free_fn = NULL;
+  dequeue_iter.position = 0;
+  return dequeue_iter;
+}
+
+Result dequeue_peek_from_front(Dequeue *dequeue, unsigned int back) {
+  if (back >= dequeue->size)
+    return result_get_invalid_reason("given index is out of bounds");
+  unsigned int actual_index =
+      (dequeue->head_index + dequeue->size - 1 - back) % dequeue->capacity;
+  return result_get_valid_with_data(
+      (void *)((char *)dequeue->head.some +
+               actual_index * dequeue->element_size));
 }
