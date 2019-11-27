@@ -16,7 +16,7 @@ CDBGFLAGS = -g -O0
 CRLSFLAGS = -O3
 CFLAGS += -Wall -Wextra -Wconversion -Wno-unused -pedantic
 LDFLAGS += -Llib
-LDLIBS += -llapacke -llapack -lblas -lm
+LDLIBS += -lm
 
 ifndef no_user
 PYFLAGS = --user
