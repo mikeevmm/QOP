@@ -44,14 +44,29 @@ Result dequeue_resize(Dequeue *dequeue, unsigned int fits) {
       char *actual_head = (char *)(dequeue->head.data) +
                           dequeue->head_index * dequeue->element_size;
       // Copy from `actual_head` to end
-      memcpy(new_mem, (void *)actual_head,
-             (dequeue->capacity - dequeue->head_index) * dequeue->element_size);
+      // Note that we may be shrinking, and so the elements don't go "up to" the
+      // capacity
+      if (dequeue->head_index + dequeue->size > dequeue->capacity) {
+        memcpy(
+            new_mem, (void *)actual_head,
+            (dequeue->capacity - dequeue->head_index) * dequeue->element_size);
+      } else {
+        memcpy(new_mem, (void *)actual_head,
+               dequeue->size * dequeue->element_size);
+      }
       // Copy from end to `actual_head`
-      char *continuing =
-          (char *)new_mem +
-          (dequeue->capacity - dequeue->head_index) * dequeue->element_size;
-      memcpy((void *)continuing, dequeue->head.data,
-             dequeue->head_index * dequeue->element_size);
+      // Note that we may be shrinking, and there are no elements "to the left"
+      // of the head
+      if (dequeue->head_index + dequeue->size >= dequeue->capacity) {
+        char *continuing =
+            (char *)new_mem +
+            (dequeue->capacity - dequeue->head_index) * dequeue->element_size;
+        memcpy((void *)continuing, dequeue->head.data,
+               ((dequeue->head_index + dequeue->size) % dequeue->capacity) *
+                   dequeue->element_size);
+      }
+      // Free old memory
+      free(dequeue->head.data);
     }  // else There was no allocated memory; no sorting/copying
 
     dequeue->head = option_some_with_data(new_mem);
