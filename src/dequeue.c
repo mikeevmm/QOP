@@ -159,6 +159,6 @@ Result dequeue_peek_from_front(Dequeue *dequeue, unsigned int back) {
   unsigned int actual_index =
       (dequeue->head_index + dequeue->size - 1 - back) % dequeue->capacity;
   return result_get_valid_with_data(
-      (void *)((char *)dequeue->head.some +
+      (void *)((char *)dequeue->head.data +
                actual_index * dequeue->element_size));
 }
