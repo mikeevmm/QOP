@@ -282,6 +282,9 @@ int main(void) {
       Option_Uint control = *(Option_Uint *)iter_next(&controls_iter).data;
       result_unwrap(circuit_add_gate(&circuit, gate, qubit, control));
     }
+    iter_free(&gates_iter);
+    iter_free(&qubits_iter);
+    iter_free(&controls_iter);
   }
 
   result_unwrap(circuit_compact(&circuit));
@@ -324,6 +327,7 @@ int main(void) {
       }
       printf("\n");
     }
+    iter_free(&params_iter);
   }
 
   printf("FINAL EXPECTATION VALUE:\n");
@@ -358,6 +362,7 @@ int main(void) {
     while ((next = iter_next(&gates_iter)).some) {
       gate_free((Gate *)next.data);
     }
+    iter_free(&gates_iter);
   }
   vector_free(&gates);
   {
@@ -366,6 +371,7 @@ int main(void) {
     while ((next = iter_next(&params_iter)).some) {
       optimizer_gate_param_free((GateParameterization *)next.data);
     }
+    iter_free(&params_iter);
   }
   vector_free(&reparams);
   circuit_free(&circuit);

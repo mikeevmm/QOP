@@ -152,6 +152,7 @@ static void qop_circuit_obj_dealloc(QopCircuitObject *obj) {
       PyObject *gate_pyobj_ptr = *(PyObject **)next.data;
       Py_DECREF(gate_pyobj_ptr);
     }
+    iter_free(&refs_iter);
   }
 
   // Free the vector containing the references itself
@@ -495,6 +496,7 @@ static void free_reparams_vector(Vector *reparams_vector) {
     GateParameterization *param = (GateParameterization *)next.data;
     optimizer_gate_param_free(param);
   }
+  iter_free(&param_iter);
 }
 
 // Helper function for `qop_circuit_optimize`.
@@ -1102,6 +1104,7 @@ static bool parse_optimization_settings(
               // Free vectors
               free_reparams_vector(reparams_vec);
               vector_free(reparams_to_obj_pointer);
+              iter_free(&refd_gates_iter);
               return false;
             }
           }
@@ -1116,6 +1119,7 @@ static bool parse_optimization_settings(
               // Free vectors
               free_reparams_vector(reparams_vec);
               vector_free(reparams_to_obj_pointer);
+              iter_free(&refd_gates_iter);
               return false;
             }
           }
@@ -1129,6 +1133,7 @@ static bool parse_optimization_settings(
               // Free vectors
               free_reparams_vector(reparams_vec);
               vector_free(reparams_to_obj_pointer);
+              iter_free(&refd_gates_iter);
               return false;
             }
           }
@@ -1137,7 +1142,8 @@ static bool parse_optimization_settings(
           continue;
       }  // end switch(id)
     }    // done iterating over gates
-  }      // done automatically creating reparams
+    iter_free(&refd_gates_iter);
+  }  // done automatically creating reparams
 
   // Sanity check that there's something to optimize!
   if (reparams_vec->size == 0) {
@@ -1284,7 +1290,19 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
   // Create optimizer
   Optimizer optimizer;
   {
-    Result init_r = optimizer_init(&optimizer, opt_settings, ada_settings);
+    OptimizerAlgoSettings opt_algo_settings;
+    {
+      Result init_r = optimizer_algo_settings_init(&opt_algo_settings,
+                                                   AlgoAdadelta, &ada_settings);
+      if (!init_r.valid) {
+        optimizer_settings_free(&opt_settings);
+        free_reparams_vector(&reparams_vec);
+        vector_free(&reparams_to_obj_pointer);
+        return NULL;
+      }
+    }
+
+    Result init_r = optimizer_init(&optimizer, opt_settings, opt_algo_settings);
     if (!init_r.valid) {
       // Something went wrong with initializing the optimizer object
       optimizer_settings_free(&opt_settings);
@@ -1380,17 +1398,20 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
               // next.data is a pointer to a pointer
               Py_DECREF(*(PyObject **)next.data);
             }
+            iter_free(&results_iter);
           }
           // Free stuff in general
           optimizer_settings_free(&opt_settings);
           free_reparams_vector(&reparams_vec);
           vector_free(&reparams_to_obj_pointer);
           vector_free(&results_vector);
+          iter_free(&reparams_iter);
 
           return NULL;
         }
       }
     }
+    iter_free(&reparams_iter);
   }
 
   // Assemble final results tuple
@@ -1409,6 +1430,7 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
         PyObject *subtuple = *(PyObject **)next.data;
         PyTuple_SetItem(final_result, subtuple_iter.position - 1, subtuple);
       }
+      iter_free(&subtuple_iter);
     }
 
     // Free the results_vector vector.
@@ -1450,6 +1472,7 @@ static PyObject *qop_circuit_get_gates(QopCircuitObject *self) {
     PyTuple_SetItem(gates_tuple, ref_gates_iter.position - 1,
                     (PyObject *)gate_obj);
   }
+  iter_free(&ref_gates_iter);
 
   // The list was created with a new reference, so we can return
   // without further INCREFing it
