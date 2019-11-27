@@ -15,7 +15,9 @@
 #define QOP_OPTIMIZER_H_
 
 #include <complex.h>
+#include <lapacke.h>
 #include "include/circuit.h"
+#include "include/dequeue.h"
 #include "include/gate.h"
 #include "include/option.h"
 #include "include/vector.h"
@@ -36,11 +38,10 @@ typedef struct AdadeltaSettings {
 AdadeltaSettings optimizer_adadelta_get_default();
 
 typedef struct LbfgsSettings {
-  // Currently empty
-  // TODO:
+  unsigned int m;  // How many past iterations to "remember"
+  double alpha; // The update factor; should be within Wolfe conditions
 } LbfgsSettings;
 
-// TODO:
 LbfgsSettings optimizer_lbfgs_get_default();
 
 typedef enum OptimizerAlgorithm {
@@ -58,9 +59,9 @@ typedef struct OptimizerAlgoSettings {
 
 // TODO:
 // This copies the specific settings!
-Result optimizer_algo_settings_init(
-    OptimizerAlgoSettings *algo_settings, OptimizerAlgorithm algorithm,
-    void *specific_settings);
+Result optimizer_algo_settings_init(OptimizerAlgoSettings *algo_settings,
+                                    OptimizerAlgorithm algorithm,
+                                    void *specific_settings);
 
 // Description of a parameterized gate to be optmimized with an
 // `Optimizer`.

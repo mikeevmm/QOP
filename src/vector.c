@@ -35,14 +35,19 @@ Result vector_resize(Vector *v, size_t size) {
 
     void *resized;
     {
-      if (v->data == NULL)
+      if (v->data == NULL) {
         resized = malloc(new_capacity * v->obj_size);
-      else
+        if (resized == NULL) {
+          return result_get_invalid_reason(
+              "could not resize vector; malloc failed");
+        }
+      } else {
         resized = realloc(v->data, new_capacity * v->obj_size);
-    }
-    if (resized == NULL) {
-      return result_get_invalid_reason(
-          "could not resize vector; realloc failed");
+        if (resized == NULL) {
+          return result_get_invalid_reason(
+              "could not resize vector; realloc failed");
+        }
+      }
     }
     v->data = resized;
     v->capacity = new_capacity;
@@ -62,7 +67,9 @@ Result vector_resize(Vector *v, size_t size) {
         else
           resized = realloc(v->data, new_capacity * v->obj_size);
       }
-      if (!resized) {
+      if (resized == NULL) {
+        free(v->data);
+        v->init = false;
         return result_get_invalid_reason(
             "could not resize vector; realloc failed");
       }
@@ -154,16 +161,23 @@ void vector_free(Vector *v) {
   v->init = false;
 }
 
+static Option vector_iter_next_fn(Iter *iter, unsigned int pos) {
+  Vector *v = (Vector *)iter->context;
+  if (iter->position >= v->size) return option_none();
+  void *object = (void *)((char *)v->data + iter->position * v->obj_size);
+  return option_some_with_data(object);
+}
+
 Iter vector_iter_create(Vector *v) {
   if (!v->init) {
     return iter_get_empty();
   }
 
   Iter new_iter;
-  new_iter.head = v->data;
-  new_iter.length = (unsigned int)v->size;
-  new_iter.stride = (unsigned int)v->obj_size;
+  new_iter.context = (void *)v;
   new_iter.position = 0;
+  new_iter.next_fn = vector_iter_next_fn;
+  new_iter.free_fn = NULL;
   return new_iter;
 }
 
