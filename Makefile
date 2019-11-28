@@ -56,8 +56,6 @@ $(TEST_SRC): $(TEST_DIR)/%.c: $(filter-out $(OBJ_DIR)/main.o, $(OBJ))
 	$(CC) $(CPPFLAGS) $(CDBGFLAGS) $(CFLAGS) -c $@ -o $(OBJ_DIR)/$*.o
 	$(CC) $(LDFLAGS) $^ $(OBJ_DIR)/$*.o $(LDLIBS) -o $(TEST_DIR)/$*.out
 	$(TEST_DIR)/$*.out
-	rm $(OBJ_DIR)/$*.o
-	rm $(TEST_DIR)/$*.out
 
 py_build: $(SRC_DIR)/*.c $(PYTHON_DIR)/*.c
 	python3 buildext.py build
