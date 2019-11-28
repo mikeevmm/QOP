@@ -13,7 +13,7 @@
 static const double _Complex hamiltonian[4][4] = {
     {1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, -1}};
 static const unsigned int qubit_count = 2;
-static const unsigned int layer_count = 4;
+static const unsigned int layer_count = 2;
 
 int main(void) {
   Circuit circuit;
@@ -31,7 +31,8 @@ int main(void) {
 
   // Fix the seed so that results are reproducible
   // Paul Dirac was born on 8th Aug 1902 :)
-  srand(8081902);
+  //srand(8081902);
+  srand(time(NULL));
 
   // First push all gates, to make sure their memory position doesn't
   // change
@@ -61,7 +62,7 @@ int main(void) {
 
   for (int i = 0; i < qubit_count; ++i) {
     Gate ry;
-    double param[] = {0.};
+    double param[] = {0.01};
     result_unwrap(gate_init_from_identifier(&ry, GateRy, param));
     result_unwrap(vector_push(&gates, &ry));
     result_unwrap(vector_push(&qubits, &i));
@@ -75,7 +76,7 @@ int main(void) {
     Iter qubits_iter = vector_iter_create(&qubits);
     Iter controls_iter = vector_iter_create(&controls);
     Option next;
-    double delta[] = {0.1};
+    double delta[] = {0.01};
     while ((next = iter_next(&gates_iter)).some) {
       double param[] = {((double)rand() / RAND_MAX * 2. - 1.) * 3.1415926};
       Gate *gate = (Gate *)next.data;
@@ -103,14 +104,19 @@ int main(void) {
 
   OptimizerSettings opt_settings;
   result_unwrap(optimizer_settings_init(
-      &opt_settings, &circuit, (double _Complex *)hamiltonian, 1e-3,
-      reparams.data, reparams.size, option_from_uint(4000)));
+      &opt_settings, &circuit, (double _Complex *)hamiltonian, 1e-2,
+      reparams.data, reparams.size, option_none_uint()));
   OptimizerAlgoSettings algo_settings;
   {
     LbfgsSettings lbfgs_settings = optimizer_lbfgs_get_default();
-    lbfgs_settings.m = 20;
+    lbfgs_settings.alpha = 0.09;
     optimizer_algo_settings_init(&algo_settings, AlgoLbfgs,
                                  (void *)(&lbfgs_settings));
+    /*
+    AdadeltaSettings ada_settings = optimizer_adadelta_get_default();
+    optimizer_algo_settings_init(&algo_settings, AlgoAdadelta,
+                                 (void *)(&ada_settings));
+    */
   }
   Optimizer opt;
   result_unwrap(optimizer_init(&opt, opt_settings, algo_settings));

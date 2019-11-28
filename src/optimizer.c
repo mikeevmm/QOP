@@ -1,5 +1,9 @@
 #include "include/optimizer.h"
 
+#define PRINT(v, l)                                         \
+  for (unsigned int i = 0; i < l; ++i) printf("%e ", v[i]); \
+  printf("\n");
+
 // Returns a default `AdadeltaSettings` struct.
 // The default values here passed are the same used in section 4.1. of
 // the ADADELTA paper (arXiv:1212.5701).
@@ -637,6 +641,7 @@ static Result calculate_gradient(double (*gradient)[],
                                                   opt_settings.reparams_count);
   Option next;
   while ((next = iter_next(&param_iter)).some) {
+    // For parameter in gate parameterizations...
     GateParameterization *param = (GateParameterization *)(next.data);
     Iter subparam_iter = iter_create_contiguous_memory(
         param->params, sizeof(double), param->param_count);
@@ -653,7 +658,7 @@ static Result calculate_gradient(double (*gradient)[],
         param->gate->reparamFn(&param->gate->matrix, param->params);
 
         // Initialize left buffer to |0>
-        memcpy(buff_left, opt_settings.zero_state,
+        memcpy(*buff_left, opt_settings.zero_state,
                sizeof(double _Complex) * state_size);
 
         // Simulate into left buffer
@@ -677,7 +682,7 @@ static Result calculate_gradient(double (*gradient)[],
         param->gate->reparamFn(&param->gate->matrix, param->params);
 
         // Initialize right buffer to |0>
-        memcpy(buff_right, opt_settings.zero_state,
+        memcpy(*buff_right, opt_settings.zero_state,
                sizeof(double _Complex) * state_size);
 
         // Simulate into right buffer
@@ -741,7 +746,6 @@ static Result calculate_gradient(double (*gradient)[],
 
 // Optimize a circuit's parameters w.r.t. the expectation value of the
 // Hamiltonian using a Low-Memory Broyden-Fletcher-Goldfarb-Shanno algorithm
-// TODO
 OptimizationResult optimizer_optimize_lbfgs(
     Optimizer *optimizer, OptimizerParamCallback param_callback,
     OptimizerEnergyCallback energy_callback, void *callback_context) {
@@ -772,9 +776,9 @@ OptimizationResult optimizer_optimize_lbfgs(
   // iteration count allowed
   unsigned long int iter_count = 0;
 
-  // 2-norm of the descent step
+  // 2-norm of the local gradient
   // Used to break out of the optimization based on `stop_at`
-  double step_two_norm = opt_settings.stop_at + 1;
+  double grad_two_norm = opt_settings.stop_at + 1;
 
   // Buffers for state at left and right of the parameters
   // This is needed to approximate the gradient
@@ -789,9 +793,12 @@ OptimizationResult optimizer_optimize_lbfgs(
   Dequeue step_memory;
   Dequeue grad_delta_memory;
   {
+    // Initialize `step_memory`
     Result init_r;
     init_r = dequeue_init(&step_memory, sizeof(double) * abs_param_count);
     if (!init_r.valid) return result_as_optimization_result(init_r);
+
+    // Initialize `grad_delta_memory`
     init_r = dequeue_init(&grad_delta_memory, sizeof(double) * abs_param_count);
     if (!init_r.valid) {
       dequeue_free(&step_memory);
@@ -805,7 +812,7 @@ OptimizationResult optimizer_optimize_lbfgs(
   memset(last_gradient, 0, sizeof(double) * abs_param_count);
 
   // Optimization cycle:
-  while (step_two_norm > opt_settings.stop_at) {
+  while (grad_two_norm > opt_settings.stop_at) {
     // If there's a maximum number of iterations, keep track of the
     // current iteration (and break as appropriate)
     if (opt_settings.max_iterations.some) {
@@ -813,8 +820,8 @@ OptimizationResult optimizer_optimize_lbfgs(
       if (iter_count >= opt_settings.max_iterations.data) break;
     }
 
-    // Choose H_k^0
-    {  // Calculate gradient into `gradient`
+    // Calculate gradient into `gradient`
+    {
       Result grad_r =
           calculate_gradient(&gradient, abs_param_count, opt_settings,
                              &buff_left, &buff_right, state_size, circuit);
@@ -828,21 +835,99 @@ OptimizationResult optimizer_optimize_lbfgs(
     // Calculate the gradient delta
     // We need to do this now because `gradient` will be overwritten as a
     // consequence of the "recursion" over q
+    // Also calculate two norm!
+    grad_two_norm = 0;
     double grad_delta[abs_param_count];
     for (unsigned int i = 0; i < abs_param_count; ++i) {
       grad_delta[i] = gradient[i] - last_gradient[i];
+      grad_two_norm += pow(gradient[i], 2);
     }
     memcpy(last_gradient, gradient, sizeof(double) * abs_param_count);
 
-    // Compute H⁰k
-    // We use the approximation suggested by Nocedal (2006), p. 178
-    // that H = \gamma I (eq. 7.20)
-    // and so store only gamma
-    double gamma;
-    {
-      // Calculate gamma
-      // (if there is history to calculate it from, otherwise assume = 1)
-      if (grad_delta_memory.size > 0) {
+    // Compute H_k Grad(f)_K
+    // via two loop recursion if there is history
+    // (i.e. calculate direction of descent)
+    // ***This will overwrite the gradient!***
+    // However, the gradient is still stored in `last_gradient`
+    // for the rest of the iteration.
+    // If there is no history for two loop recursion, perform
+    // simple gradient descent
+    if (grad_delta_memory.size == lbfgs_settings.m) {
+      double
+          rho_cache[grad_delta_memory.size];  // Cache `rho`s on the first loop
+      double alpha_cache[grad_delta_memory.size];  // Cache `alpha`s on the
+                                                   // first loop
+
+      // First loop
+      {
+        Iter grad_delta_iter = dequeue_into_iterator_ftb(&grad_delta_memory);
+        Iter step_delta_iter = dequeue_into_iterator_ftb(&step_memory);
+
+        // Not the same as the index of the iteration! (i.e. "position" of the
+        // iterators) Note that because one loop is b.t.f. and the other is
+        // f.t.b., the caching/access must account for this.
+        // The first loop is f.t.b.
+        unsigned int iter_index = grad_delta_memory.size - 1;
+
+        Option next;
+        while ((next = iter_next(&grad_delta_iter)).some) {
+          double *grad_delta_i = (double *)next.data;
+
+          next = iter_next(&step_delta_iter);
+          if (!next.some) {
+            dequeue_free(&step_memory);
+            dequeue_free(&grad_delta_memory);
+            return result_as_optimization_result(result_get_invalid_reason(
+                "size mismatch between memory dequeues"));
+          }
+          double *step_i = (double *)next.data;
+
+          // We now have s_i, y_i
+          // (respectively `step_i`, `grad_delta_i`)
+
+          // Calculate rho
+          double rho;
+          {
+            rho = 0;
+            for (unsigned int i = 0; i < abs_param_count; ++i) {
+              rho += grad_delta_i[i] * step_i[i];
+            }
+            rho = 1. / rho;
+          }
+
+          rho_cache[iter_index] = rho;
+
+          // Calculate alpha
+          double alpha;
+          {
+            alpha = 0;
+            for (unsigned int i = 0; i < abs_param_count; ++i) {
+              alpha += step_i[i] * gradient[i];
+            }
+            alpha = rho * alpha;
+          }
+
+          alpha_cache[iter_index] = alpha;
+
+          // Update `q` (which is the gradient array, here)
+          for (unsigned int i = 0; i < abs_param_count; ++i) {
+            gradient[i] -= alpha * grad_delta_i[i];
+          }
+
+          iter_index--;
+        } // Finished iterating over `grad_delta_memory`
+
+        iter_free(&grad_delta_iter);
+        iter_free(&step_delta_iter);
+      }  // Finished first loop of two loop recursion
+
+      // Compute H⁰k
+      // We use the approximation suggested by Nocedal (2006), p. 178
+      // that H = \gamma I (eq. 7.20)
+      // and so store only gamma
+      double gamma;
+      {
+        // Calculate gamma
         // Safely peek the most recent gradient delta in memory
         double *last_grad_delta;
         {
@@ -855,7 +940,7 @@ OptimizationResult optimizer_optimize_lbfgs(
           last_grad_delta = (double *)peek_r.content.data;
         }
 
-        if (step_memory.size == 0) {
+        if (step_memory.size != grad_delta_memory.size) {
           dequeue_free(&step_memory);
           dequeue_free(&grad_delta_memory);
           return result_as_optimization_result(result_get_invalid_reason(
@@ -875,7 +960,8 @@ OptimizationResult optimizer_optimize_lbfgs(
         }
 
         // Calculate the numerator and denominator sum in gamma
-        double numerator = 0, denominator = 0;
+        double numerator = 0;
+        double denominator = 0;
         for (unsigned int i = 0; i < abs_param_count; ++i) {
           numerator += last_grad_delta[i] * last_step[i];
           denominator += last_grad_delta[i] * last_grad_delta[i];
@@ -883,135 +969,59 @@ OptimizationResult optimizer_optimize_lbfgs(
 
         // Finally, calculate gamma
         gamma = numerator / denominator;
-      } else {
-        gamma = 1;
-      }
-    }
-
-    // Compute H_k Grad(f)_K
-    // via two loop recursion
-    // (i.e. calculate direction of descent)
-    // ***This will overwrite the gradient!***
-    // However, the gradient is still stored in `last_gradient`
-    // for the rest of the iteration.
-
-    double rho_cache[lbfgs_settings.m];    // Cache `rho`s on the first loop
-    double alpha_cache[lbfgs_settings.m];  // Cache `alpha`s on the first loop
-    // Note that the caches may have uninitialized elements,
-    // if the dequeues have less than `m` elements still
-
-    // First loop
-    {
-      Iter grad_delta_iter = dequeue_into_iterator_ftb(&grad_delta_memory);
-      Iter step_delta_iter = dequeue_into_iterator_ftb(&step_memory);
-
-      // Not the same as the index of the iteration! (i.e. "position" of the
-      // iterators) Note that Because one loop is b.t.f. and the other is
-      // f.t.b., the caching/access must account for this.
-      unsigned int iter_index = grad_delta_memory.size - 1;
-
-      Option next;
-      while ((next = iter_next(&grad_delta_iter)).some) {
-        double *grad_delta_i = (double *)next.data;
-
-        next = iter_next(&step_delta_iter);
-        if (!next.some) {
-          dequeue_free(&step_memory);
-          dequeue_free(&grad_delta_memory);
-          return result_as_optimization_result(result_get_invalid_reason(
-              "size mismatch between memory dequeues"));
-        }
-        double *step_i = (double *)next.data;
-
-        // We now have s_i, y_i
-
-        // Calculate rho
-        double rho;
-        {
-          rho = 0;
-          for (unsigned int i = 0; i < abs_param_count; ++i) {
-            rho += grad_delta_i[i] * step_i[i];
-          }
-          rho = 1. / rho;
-        }
-
-        rho_cache[iter_index] = rho;
-
-        // Calculate alpha
-        double alpha;
-        {
-          alpha = 0;
-          for (unsigned int i = 0; i < abs_param_count; ++i) {
-            alpha += step_i[i] * gradient[i];
-          }
-          alpha = rho * alpha;
-        }
-
-        alpha_cache[iter_index] = alpha;
-
-        // Update `q` (which is the gradient array, here)
-        for (unsigned int i = 0; i < abs_param_count; ++i) {
-          gradient[i] -= alpha * grad_delta_i[i];
-        }
-
-        iter_index--;
       }
 
-      iter_free(&grad_delta_iter);
-      iter_free(&step_delta_iter);
-    }  // Finished first loop of two loop recursion
-
-    // r <- H^0_k q
-    // Take into account that we are taking H_0^k ~ gamma I
-    {
+      // r <- H^0_k q
+      // Take into account that we are taking H_0^k ~ gamma_k I
       for (unsigned int i = 0; i < abs_param_count; ++i) {
         gradient[i] *= gamma;
       }
-    }
 
-    // Second loop
-    {
-      // Note that the iteration is now back to front
-      Iter grad_delta_iter = dequeue_into_iterator_btf(&grad_delta_memory);
-      Iter step_delta_iter = dequeue_into_iterator_btf(&step_memory);
-      unsigned int iter_index = 0;
+      // Second loop
+      {
+        // Note that the iteration is now back to front
+        Iter grad_delta_iter = dequeue_into_iterator_btf(&grad_delta_memory);
+        Iter step_delta_iter = dequeue_into_iterator_btf(&step_memory);
+        unsigned int iter_index = 0;
 
-      Option next;
-      while ((next = iter_next(&grad_delta_iter)).some) {
-        double *grad_delta_i = (double *)next.data;
+        Option next;
+        while ((next = iter_next(&grad_delta_iter)).some) {
+          double *grad_delta_i = (double *)next.data;
 
-        next = iter_next(&step_delta_iter);
-        if (!next.some) {
-          dequeue_free(&step_memory);
-          dequeue_free(&grad_delta_memory);
-          return result_as_optimization_result(
-              result_get_invalid_reason("size mismatch between dequeues"));
-        }
-        double *step_i = (double *)next.data;
-
-        // We now have s_i, y_i
-
-        // Calculate beta
-        double beta;
-        {
-          beta = 0;
-          for (unsigned int i = 0; i < abs_param_count; ++i) {
-            beta += grad_delta_i[i] * gradient[i];
+          next = iter_next(&step_delta_iter);
+          if (!next.some) {
+            dequeue_free(&step_memory);
+            dequeue_free(&grad_delta_memory);
+            return result_as_optimization_result(
+                result_get_invalid_reason("size mismatch between dequeues"));
           }
-          beta *= rho_cache[iter_index];
+          double *step_i = (double *)next.data;
+
+          // We now have s_i, y_i
+          // (respectively `step_i`, `grad_delta_i`)
+
+          // Calculate beta
+          double beta;
+          {
+            beta = 0;
+            for (unsigned int i = 0; i < abs_param_count; ++i) {
+              beta += grad_delta_i[i] * gradient[i];
+            }
+            beta *= rho_cache[iter_index];
+          }
+
+          // Update r
+          for (unsigned int i = 0; i < abs_param_count; ++i) {
+            gradient[i] += step_i[i] * (alpha_cache[iter_index] - beta);
+          }
+
+          iter_index++;
         }
 
-        // Update r
-        for (unsigned int i = 0; i < abs_param_count; ++i) {
-          gradient[i] += step_i[i] * (alpha_cache[iter_index] - beta);
-        }
-
-        iter_index++;
-      }
-
-      iter_free(&grad_delta_iter);
-      iter_free(&step_delta_iter);
-    }  // Finished second loop of two loop recursion
+        iter_free(&grad_delta_iter);
+        iter_free(&step_delta_iter);
+      }  // Finished second loop of two loop recursion
+    }    // endif history
 
     // `gradient` now holds H_k grad(f)_k
     // i.e. `-alpha*gradient` is the direction of descent
@@ -1019,9 +1029,7 @@ OptimizationResult optimizer_optimize_lbfgs(
     // reparameterize
 
     // Step all variables, perform the reparameterizations
-    // Also calculate `step_two_norm`
     {
-      step_two_norm = 0;
       unsigned int flat_param_index = 0;
       // For each gate reparameterization...
       Iter param_iter = iter_create_contiguous_memory(
@@ -1037,19 +1045,51 @@ OptimizationResult optimizer_optimize_lbfgs(
         // For each parameter in that gate parameterization...
         while ((next = iter_next(&subparam_iter)).some) {
           double *subparam = (double *)(next.data);
-          *subparam -= lbfgs_settings.alpha * gradient[flat_param_index];
 
-          // Also reverse gradient (+ multiply by alpha)
-          // Careful that we're reversing *after* subtracting to subparam
-          gradient[flat_param_index] =
-              -lbfgs_settings.alpha * gradient[flat_param_index];
+          double step = -lbfgs_settings.alpha * gradient[flat_param_index];
+          *subparam += step;
 
-          // Also calculate two norm of descent
-          step_two_norm += pow(gradient[flat_param_index], 2);
+          // Optionally report new parameter
+          if (param_callback != NULL)
+            param_callback(flat_param_index, *subparam, callback_context);
+
+          // Set gradient array to be the step
+          gradient[flat_param_index] = step;
 
           flat_param_index++;
         }
+
+        iter_free(&subparam_iter);
+        iter_free(&deltas_iter);
       }
+      iter_free(&param_iter);
+    }
+
+    // Calculate energy if needed
+    if (energy_callback != NULL) {
+      // TODO: Put this in a common function!
+      double _Complex energy = 0;
+      double _Complex current_phi_state[state_size];
+      memcpy(current_phi_state, opt_settings.zero_state,
+             sizeof(double _Complex) * (unsigned long int)state_size);
+      circuit_run(circuit, &current_phi_state);
+
+      for (unsigned int i = 0; i < opt_settings.hamiltonian.size; ++i) {
+        Vector *row = (Vector *)opt_settings.hamiltonian.data + i;
+        for (unsigned int u = 0; u < row->size; ++u) {
+          OptimizerDCPackedRowElem elem =
+              *((OptimizerDCPackedRowElem *)row->data + u);
+          unsigned int j = elem.j;
+          double _Complex value = elem.value;
+          if (i == j)
+            energy += conj(current_phi_state[i]) * value * current_phi_state[j];
+          else
+            energy +=
+                2 * conj(current_phi_state[i]) * value * current_phi_state[j];
+        }
+      }
+
+      energy_callback(energy, callback_context);
     }
 
     // If the dequeues are full, pop an item

@@ -15,7 +15,6 @@
 #define QOP_OPTIMIZER_H_
 
 #include <complex.h>
-#include <lapacke.h>
 #include "include/circuit.h"
 #include "include/dequeue.h"
 #include "include/gate.h"
