@@ -4,7 +4,7 @@
 // Here we initialize not only the module, but also import the NumPy
 // functions (via `import_array()`), and instantiate the internal error
 // module exception type, `QopError`.
-PyMODINIT_FUNC PyInit_qop(void) {
+PyMODINIT_FUNC PyInit_qop() {
   PyObject *mod;
 
   if (PyType_Ready(&QopCircuitType) < 0) return NULL;
@@ -307,7 +307,7 @@ static PyObject *qop_gate_create(PyTypeObject *type, PyObject *args,
 
         // Validate npy_params
         {
-          unsigned int ndims = PyArray_NDIM((PyArrayObject *)npy_params);
+          int ndims = PyArray_NDIM((PyArrayObject *)npy_params);
           npy_intp *dims = PyArray_DIMS((PyArrayObject *)npy_params);
           if (ndims != 1 || dims[0] != 1) {
             // The matrix does not have the correct shape; send error
@@ -1152,8 +1152,8 @@ static bool parse_optimization_settings(
                 // and params are memcpyd into the gate parameterization,
                 // so there's no concerns about lifetime
                 Result init_r = optimizer_gate_param_init(
-                    &gate_param, &gate->gate, deltas_vec.size, gate->params,
-                    deltas_vec.data);
+                    &gate_param, &gate->gate, (unsigned int)deltas_vec.size,
+                    gate->params, deltas_vec.data);
 
                 if (!init_r.valid) {
                   // Something went wrong
@@ -1332,7 +1332,7 @@ static bool parse_optimization_settings(
   {
     Result init_r = optimizer_settings_init(
         opt_settings, &self->circuit, hamiltonian, stop_at, reparams_vec->data,
-        reparams_vec->size, max_iters);
+        (unsigned int)reparams_vec->size, max_iters);
 
     if (!init_r.valid) {
       // Something went wrong initializing the optimizer settings
@@ -1491,17 +1491,20 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
       Result init_r;
       switch (opt_algorithm) {
         case AlgoAdadelta:
-          optimizer_algo_settings_init(&opt_algo_settings, AlgoAdadelta,
-                                       &ada_settings);
+          init_r = optimizer_algo_settings_init(&opt_algo_settings,
+                                                AlgoAdadelta, &ada_settings);
           break;
         case AlgoLbfgs:
-          optimizer_algo_settings_init(&opt_algo_settings, AlgoLbfgs,
-                                       &lbfgs_settings);
+          init_r = optimizer_algo_settings_init(&opt_algo_settings, AlgoLbfgs,
+                                                &lbfgs_settings);
           break;
         case AlgoAdam:
-          optimizer_algo_settings_init(&opt_algo_settings, AlgoAdam,
-                                       &adam_settings);
+          init_r = optimizer_algo_settings_init(&opt_algo_settings, AlgoAdam,
+                                                &adam_settings);
           break;
+        default: {
+          init_r = result_get_invalid_reason("missing case for algorithm");
+        };
       }
       if (!init_r.valid) {
         optimizer_settings_free(&opt_settings);
@@ -1574,7 +1577,7 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
       {
         // Grab the corresponding gate
         QopGateObject *py_gate =
-            *(QopGateObject **)(reparams_to_obj_pointer.data +
+            *(QopGateObject **)((char *)reparams_to_obj_pointer.data +
                                 (reparams_iter.position - 1) *
                                     sizeof(QopGateObject *));
         // Copy the parameters there
@@ -1695,7 +1698,7 @@ static PyObject *qop_circuit_run(QopCircuitObject *self, PyObject *args,
                                  PyObject *kwds) {
   // Parse incoming state
   double _Complex state_in[1U << self->qubit_count];
-  memset(state_in, 0, sizeof(double _Complex) * (1U << self->qubit_count));
+  for (unsigned int i = 0; i < (1U << self->qubit_count); ++i) state_in[i] = 0.;
 
   {
     // Parse argument tuple
@@ -1935,7 +1938,7 @@ static void qop_write_parameter(unsigned int flat_index, double param,
   char *stringed;
   int byte_count = asprintf(&stringed, "%e ", param);
   if (byte_count > 0) {
-    write(file_desc, stringed, byte_count);
+    write(file_desc, stringed, (size_t)byte_count);
   }
   free(stringed);
 }
@@ -1947,7 +1950,7 @@ static void qop_write_energy(_Complex double energy, void *context) {
   char *stringed;
   int byte_count = asprintf(&stringed, "%e %e\n", creal(energy), cimag(energy));
   if (byte_count > 0) {
-    write(file_desc, stringed, byte_count);
+    write(file_desc, stringed, (size_t)byte_count);
   }
   free(stringed);
 }

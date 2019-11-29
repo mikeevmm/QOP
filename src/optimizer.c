@@ -124,8 +124,8 @@ Result optimizer_settings_init(OptimizerSettings *opt_settings,
       return result_get_invalid_reason("could not malloc");
     }
     zero_state = mem;
-    memset(zero_state, 0, state_size * sizeof(double _Complex));
     zero_state[0] = 1.;
+    for (unsigned int i = 1; i < state_size; ++i) zero_state[i] = 0.;
   }
 
   // Create a compacted representation of the hamiltonian matrix.
@@ -339,17 +339,17 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer,
 }
 
 static void report_energy(unsigned int state_size,
-                          OptimizerSettings opt_settings, Circuit *circuit,
+                          OptimizerSettings *opt_settings, Circuit *circuit,
                           OptimizerEnergyCallback energy_callback,
                           void *callback_context) {
   double _Complex energy = 0;
   double _Complex current_phi_state[state_size];
-  memcpy(current_phi_state, opt_settings.zero_state,
-         sizeof(double _Complex) * (unsigned long int)state_size);
+  for (unsigned int i = 0; i < state_size; ++i)
+    current_phi_state[i] = opt_settings->zero_state[i];
   circuit_run(circuit, &current_phi_state);
 
-  for (unsigned int i = 0; i < opt_settings.hamiltonian.size; ++i) {
-    Vector *row = (Vector *)opt_settings.hamiltonian.data + i;
+  for (unsigned int i = 0; i < opt_settings->hamiltonian.size; ++i) {
+    Vector *row = (Vector *)opt_settings->hamiltonian.data + i;
     for (unsigned int u = 0; u < row->size; ++u) {
       OptimizerDCPackedRowElem elem =
           *((OptimizerDCPackedRowElem *)row->data + u);
@@ -362,7 +362,7 @@ static void report_energy(unsigned int state_size,
     }
   }
 
-  energy_callback(energy, callback_context);
+  (*energy_callback)(energy, callback_context);
 }
 
 // Performs a circuit optimization using the ADADELTA algorithm, very
@@ -446,7 +446,7 @@ OptimizationResult optimizer_optimize_adadelta(
     // Initialize the gradient array
     // The parameters here are "flattened"
     double param_gradient[abs_param_count];
-    memset(param_gradient, 0, sizeof(double) * abs_param_count);
+    for (unsigned int i = 0; i < abs_param_count; ++i) param_gradient[i] = 0.;
 
     // Buffers to write the result of the simulation at left and right
     // We don't need to initialize these right now because they're
@@ -483,8 +483,8 @@ OptimizationResult optimizer_optimize_adadelta(
                                         reparam->params);
 
             // Initialize left buffer to |0>
-            memcpy(buff_left, opt_settings.zero_state,
-                   sizeof(double _Complex) * state_size);
+            for (unsigned int i = 0; i < state_size; ++i)
+              buff_left[i] = opt_settings.zero_state[i];
 
             // Simulate into left buffer
             {
@@ -505,8 +505,8 @@ OptimizationResult optimizer_optimize_adadelta(
                                         reparam->params);
 
             // Initialize right buffer to |0>
-            memcpy(buff_right, opt_settings.zero_state,
-                   sizeof(double _Complex) * state_size);
+            for (unsigned int i = 0; i < state_size; ++i)
+              buff_right[i] = opt_settings.zero_state[i];
 
             // Simulate into right buffer
             {
@@ -614,7 +614,7 @@ OptimizationResult optimizer_optimize_adadelta(
 
       // Optionally calculate and report energy
       if (energy_callback != NULL) {
-        report_energy(state_size, opt_settings, circuit, energy_callback,
+        report_energy(state_size, &opt_settings, circuit, energy_callback,
                       callback_context);
       }
     }
@@ -647,15 +647,18 @@ OptimizationResult optimizer_optimize_adadelta(
 // calculating the gradient.
 static Result calculate_gradient(double (*gradient)[],
                                  unsigned int abs_param_count,
-                                 OptimizerSettings opt_settings,
-                                 double _Complex (*buff_left)[],
-                                 double _Complex (*buff_right)[],
+                                 OptimizerSettings *opt_settings,
                                  unsigned int state_size, Circuit *circuit) {
+  // Buffers for state at left and right of the parameters
+  // This is needed to approximate the gradient
+  double _Complex buff_left[state_size];
+  double _Complex buff_right[state_size];
+
   unsigned int flat_param_index = 0;
   // For each gate reparameterization...
-  Iter param_iter = iter_create_contiguous_memory(opt_settings.reparams,
+  Iter param_iter = iter_create_contiguous_memory(opt_settings->reparams,
                                                   sizeof(GateParameterization),
-                                                  opt_settings.reparams_count);
+                                                  opt_settings->reparams_count);
   Option next;
   while ((next = iter_next(&param_iter)).some) {
     // For parameter in gate parameterizations...
@@ -675,12 +678,12 @@ static Result calculate_gradient(double (*gradient)[],
         param->gate->reparamFn(&param->gate->matrix, param->params);
 
         // Initialize left buffer to |0>
-        memcpy(*buff_left, opt_settings.zero_state,
-               sizeof(double _Complex) * state_size);
+        for (unsigned int i = 0; i < state_size; ++i)
+          buff_left[i] = opt_settings->zero_state[i];
 
         // Simulate into left buffer
         {
-          Result run_r = circuit_run(circuit, buff_left);
+          Result run_r = circuit_run(circuit, &buff_left);
           if (!run_r.valid) {
             iter_free(&subparam_iter);
             iter_free(&deltas_iter);
@@ -699,12 +702,12 @@ static Result calculate_gradient(double (*gradient)[],
         param->gate->reparamFn(&param->gate->matrix, param->params);
 
         // Initialize right buffer to |0>
-        memcpy(*buff_right, opt_settings.zero_state,
-               sizeof(double _Complex) * state_size);
+        for (unsigned int i = 0; i < state_size; ++i)
+          buff_right[i] = opt_settings->zero_state[i];
 
         // Simulate into right buffer
         {
-          Result run_r = circuit_run(circuit, buff_right);
+          Result run_r = circuit_run(circuit, &buff_right);
           if (!run_r.valid) {
             iter_free(&subparam_iter);
             iter_free(&deltas_iter);
@@ -723,16 +726,16 @@ static Result calculate_gradient(double (*gradient)[],
       double grad_component = 0;
       {
         for (unsigned int u = 0; u < state_size; ++u) {
-          Vector *row = ((Vector *)opt_settings.hamiltonian.data) + u;
-          double _Complex left_u = (*buff_left)[u];
-          double _Complex right_u = (*buff_right)[u];
+          Vector *row = ((Vector *)opt_settings->hamiltonian.data) + u;
+          double _Complex left_u = buff_left[u];
+          double _Complex right_u = buff_right[u];
 
           for (unsigned int i = 0; i < row->size; ++i) {
             OptimizerDCPackedRowElem elem =
                 *((OptimizerDCPackedRowElem *)(row->data) + i);
             unsigned int k = elem.j;
-            double _Complex left_k = (*buff_left)[k];
-            double _Complex right_k = (*buff_right)[k];
+            double _Complex left_k = buff_left[k];
+            double _Complex right_k = buff_right[k];
             double _Complex ham_uk = elem.value;
 
             if (u == k) {
@@ -748,10 +751,10 @@ static Result calculate_gradient(double (*gradient)[],
 
         grad_component /= delta;
         (*gradient)[flat_param_index] = grad_component;
-
-        // Keep track of the "flattened" index of the subparameters.
-        flat_param_index++;
       }
+
+      // Keep track of the "flattened" index of the subparameters.
+      flat_param_index++;
     }
     iter_free(&subparam_iter);
     iter_free(&deltas_iter);
@@ -826,7 +829,7 @@ OptimizationResult optimizer_optimize_lbfgs(
   // An array to store the gradient of the last step; this is necessary to
   // compute the gradient delta
   double last_gradient[abs_param_count];
-  memset(last_gradient, 0, sizeof(double) * abs_param_count);
+  for (unsigned int i = 0; i < abs_param_count; ++i) last_gradient[i] = 0.;
 
   // Optimization cycle:
   while (grad_two_norm > opt_settings.stop_at) {
@@ -839,9 +842,8 @@ OptimizationResult optimizer_optimize_lbfgs(
 
     // Calculate gradient into `gradient`
     {
-      Result grad_r =
-          calculate_gradient(&gradient, abs_param_count, opt_settings,
-                             &buff_left, &buff_right, state_size, circuit);
+      Result grad_r = calculate_gradient(&gradient, abs_param_count,
+                                         &opt_settings, state_size, circuit);
       if (!grad_r.valid) {
         dequeue_free(&step_memory);
         dequeue_free(&grad_delta_memory);
@@ -858,8 +860,8 @@ OptimizationResult optimizer_optimize_lbfgs(
     for (unsigned int i = 0; i < abs_param_count; ++i) {
       grad_delta[i] = gradient[i] - last_gradient[i];
       grad_two_norm += pow(gradient[i], 2);
+      last_gradient[i] = gradient[i];
     }
-    memcpy(last_gradient, gradient, sizeof(double) * abs_param_count);
 
     // Compute H_k Grad(f)_K
     // via two loop recursion if there is history
@@ -1082,10 +1084,10 @@ OptimizationResult optimizer_optimize_lbfgs(
       iter_free(&param_iter);
     }
 
-    // Calculate energy if needed
+    // Report energy if needed
     if (energy_callback != NULL) {
-      report_energy(state_size, opt_settings, circuit, energy_callback,
-                    callback_context);
+      // report_energy(state_size, &opt_settings, circuit, energy_callback,
+      //              callback_context);
     }
 
     // If the dequeues are full, pop an item
@@ -1189,16 +1191,13 @@ OptimizationResult optimizer_optimize_adam(
   // Used to break out of the optimization based on `stop_at`
   double step_two_norm = opt_settings.stop_at + 1;
 
-  // Buffers for state at left and right of the parameters
-  // This is needed to approximate the gradient
-  double _Complex buff_left[abs_param_count];
-  double _Complex buff_right[abs_param_count];
-
   // Momentum vectors
   double moment_one[abs_param_count];
   double moment_two[abs_param_count];
-  memset(moment_one, 0, sizeof(double) * abs_param_count);
-  memset(moment_two, 0, sizeof(double) * abs_param_count);
+  for (unsigned int i = 0; i < abs_param_count; ++i) {
+    moment_one[i] = 0.;
+    moment_two[i] = 0.;
+  }
 
   // Optimization cycle:
   while (step_two_norm > opt_settings.stop_at) {
@@ -1213,9 +1212,8 @@ OptimizationResult optimizer_optimize_adam(
     //  Hamiltonian over the output
     double gradient[abs_param_count];
     {
-      Result grad_r =
-          calculate_gradient(&gradient, abs_param_count, opt_settings,
-                             &buff_left, &buff_right, state_size, circuit);
+      Result grad_r = calculate_gradient(&gradient, abs_param_count,
+                                         &opt_settings, state_size, circuit);
       if (!grad_r.valid) {
         return result_as_optimization_result(grad_r);
       }
@@ -1235,8 +1233,6 @@ OptimizationResult optimizer_optimize_adam(
         GateParameterization *param = (GateParameterization *)(next.data);
         Iter subparam_iter = iter_create_contiguous_memory(
             param->params, sizeof(double), param->param_count);
-        Iter deltas_iter = iter_create_contiguous_memory(
-            param->deltas, sizeof(double), param->param_count);
         // For each parameter in that gate parameterization...
         while ((next = iter_next(&subparam_iter)).some) {
           double *subparam = (double *)(next.data);
@@ -1265,6 +1261,10 @@ OptimizationResult optimizer_optimize_adam(
           // Update the variable
           *subparam += step;
 
+          // Optionally report new parameter
+          if (param_callback != NULL)
+            param_callback(flat_index, *subparam, callback_context);
+
           // Calculate the two norm (this component)
           step_two_norm += pow(step, 2);
 
@@ -1273,6 +1273,12 @@ OptimizationResult optimizer_optimize_adam(
         iter_free(&subparam_iter);
       }  // Done with param
       iter_free(&param_iter);
+    }
+
+    // Report energy if needed
+    if (energy_callback != NULL) {
+      report_energy(state_size, &opt_settings, circuit, energy_callback,
+                    callback_context);
     }
   }  // Done with optimize
 
@@ -1292,6 +1298,6 @@ OptimizationResult optimizer_optimize_adam(
   else
     result.quit_on_max_iter = false;
   result.valid = true;
-  result.content.data = circuit;
+  result.content.data = (void *)circuit;
   return result;
 }

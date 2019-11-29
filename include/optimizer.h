@@ -34,7 +34,7 @@ typedef struct AdadeltaSettings {
 // of the ADADELTA paper (arXiv:1212.5701), namely
 // `epsilon`   1.0E-6
 // `rho`       0.95
-AdadeltaSettings optimizer_adadelta_get_default();
+AdadeltaSettings optimizer_adadelta_get_default(void);
 
 typedef struct LbfgsSettings {
   unsigned int m;  // How many past iterations to "remember"
@@ -48,7 +48,7 @@ typedef struct LbfgsSettings {
 // The alpha of 1 is also based on the remark that
 // > as a result [of the estimation of H] the step length alpha = 1 is
 // accepted in most iterations
-LbfgsSettings optimizer_lbfgs_get_default();
+LbfgsSettings optimizer_lbfgs_get_default(void);
 
 typedef struct AdamSettings {
   double alpha;
@@ -60,7 +60,7 @@ typedef struct AdamSettings {
 // Returns a default `AdamSettings` struct.
 // The values are those suggested in the caption of algorithm 1, in the
 // original ADAM paper (arXiv:1412.6980).
-AdamSettings optimizer_adam_get_default();
+AdamSettings optimizer_adam_get_default(void);
 
 typedef enum OptimizerAlgorithm {
   AlgoAdadelta,

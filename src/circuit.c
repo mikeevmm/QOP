@@ -116,11 +116,12 @@ Result circuit_compact(Circuit *circuit) {
 
   // Number of gates in each slice
   unsigned int slice_gate_count[circuit->depth[1]];
-  memset(slice_gate_count, 0, sizeof(unsigned int) * circuit->depth[1]);
+  for (unsigned int i = 0; i < (circuit->depth[1]); ++i)
+    slice_gate_count[i] = 0;
 
   // Current leftmost position available
   unsigned int leftmost[circuit->depth[0]];
-  memset(leftmost, 0, sizeof(unsigned int) * circuit->depth[0]);
+  for (unsigned int i = 0; i < (circuit->depth[0]); ++i) leftmost[i] = 0;
 
   // Run over the `SoftGate`s and find the compacted position.
   // Update leftmost available positions accordingly.
@@ -324,7 +325,7 @@ Result circuit_harden(Circuit *circuit) {
   }
 
   free(hardened_gates);
-  
+
   return result_get_valid_with_data(circuit);
 }
 
@@ -429,7 +430,7 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
     // Output vector to be written to during computation; its value
     // is transferred to inout after a slice cycle
     double _Complex output[1 << qubits];
-    memset(output, 0, sizeof(double _Complex) * (1UL << qubits));
+    for (unsigned int i = 0; i < (1U << qubits); ++i) output[i] = 0.;
 
     // Grab info about this slice
     CircuitSliceInfo slice_info =
@@ -491,9 +492,7 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
       }
     }
 
-    void *copy =
-        memcpy(*inout, output, sizeof(double _Complex) * (1UL << qubits));
-    if (copy == NULL) return result_get_invalid_reason("memcpy failed");
+    for (unsigned int i = 0; i < (1U << qubits); ++i) (*inout)[i] = output[i];
   }
 
   return result_get_valid_with_data(inout);

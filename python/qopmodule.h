@@ -30,6 +30,8 @@ typedef struct QopGateObject {
   unsigned int param_count;
 } QopGateObject;
 
+PyMODINIT_FUNC PyInit_qop(void);
+
 static PyObject *qop_create_circuit(PyTypeObject *type, PyObject *args,
                                     PyObject *kwds);
 static void qop_circuit_obj_dealloc(QopCircuitObject *obj);

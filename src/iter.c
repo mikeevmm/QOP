@@ -2,7 +2,7 @@
 
 Option iter_next(Iter *iter) {
   Option next = iter->next_fn(iter, iter->position);
-  if (next.some) iter->position += 1;
+  iter->position += 1;
   return next;
 }
 
@@ -17,7 +17,7 @@ static Option iter_empty_next_fn(Iter *iter, unsigned int pos) {
 Iter iter_get_empty() {
   Iter empty_iter;
   empty_iter.position = 0;
-  empty_iter.next_fn = iter_empty_next_fn;
+  empty_iter.next_fn = &iter_empty_next_fn;
   empty_iter.free_fn = NULL;
   return empty_iter;
 }
@@ -36,7 +36,7 @@ Iter iter_create_contiguous_memory(void *head, unsigned int stride,
   iter.context = head;
   iter.context_values[0] = (int)stride;
   iter.context_values[1] = (int)size;
-  iter.next_fn = iter_contiguous_memory_next_fn;
+  iter.next_fn = &iter_contiguous_memory_next_fn;
   iter.free_fn = NULL;
   return iter;
 }

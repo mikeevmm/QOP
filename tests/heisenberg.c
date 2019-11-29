@@ -306,8 +306,8 @@ int main(void) {
       optimizer_optimize(&opt, NULL, NULL, NULL)));
 
   double _Complex zero_state[64];
-  memset(zero_state, 0, sizeof(double _Complex) * 64);
   zero_state[0] = 1;
+  for (unsigned int i = 1; i < 64; ++i) zero_state[i] = 0.;
   result_unwrap(circuit_run(&circuit, &zero_state));
 
   double norm = 0;

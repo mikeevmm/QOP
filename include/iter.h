@@ -38,7 +38,7 @@ void iter_free(Iter *iter);
 // Returns an empty (length-zero) iterator.
 // This can be useful if, for example, an iterator is made from an empty
 // `Vector` (see `Vector.h`).
-Iter iter_get_empty();
+Iter iter_get_empty(void);
 
 // Returns an iterator over a contiguous region in memory.
 Iter iter_create_contiguous_memory(void *head, unsigned int stride,

@@ -133,8 +133,8 @@ int main(void) {
       optimizer_optimize(&opt, NULL, print_energy, NULL)));
 
   double _Complex zero_state[1UL << qubit_count];
-  memset(zero_state, 0, sizeof(double _Complex) * (1UL << qubit_count));
   zero_state[0] = 1;
+  for (unsigned int i = 1; i < (1U << qubit_count); ++i) zero_state[i] = 0.;
   result_unwrap(circuit_run(&circuit, &zero_state));
 
   double norm = 0;
