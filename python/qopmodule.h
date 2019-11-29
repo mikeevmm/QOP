@@ -42,7 +42,8 @@ static PyObject *qop_circuit_add_gate(QopCircuitObject *self, PyObject *args,
 static bool parse_optimization_settings(
     PyObject *settings, QopCircuitObject *self, double _Complex *hamiltonian,
     Vector *reparams_vec, Vector *reparams_to_obj_pointer,
-    OptimizerSettings *opt_settings, AdadeltaSettings *ada_settings);
+    OptimizerSettings *opt_settings, AdadeltaSettings *ada_settings,
+    LbfgsSettings *lbfgs_settings, AdamSettings *adam_settings);
 static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
                                       PyObject *kwds);
 static PyObject *qop_circuit_get_gates(QopCircuitObject *self);

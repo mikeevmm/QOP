@@ -508,6 +508,16 @@ static void free_reparams_vector(Vector *reparams_vector) {
 //        'rho': value,
 //        'epsilon': value
 //      },
+//      'lbfgs' {
+//        'm': value,
+//        'alpha': value
+//      },
+//      'adam': {
+//        'alpha': value,
+//        'beta_one': value,
+//        'beta_two': value,
+//        'epsilon': value
+//      }
 //      'optimize': {
 //        'gates': [value, value, ...],
 //        'deltas': [ [value], [value, value], ...],
@@ -527,9 +537,12 @@ static void free_reparams_vector(Vector *reparams_vector) {
 static bool parse_optimization_settings(
     PyObject *settings, QopCircuitObject *self, double _Complex *hamiltonian,
     Vector *reparams_vec, Vector *reparams_to_obj_pointer,
-    OptimizerSettings *opt_settings, AdadeltaSettings *ada_settings) {
+    OptimizerSettings *opt_settings, AdadeltaSettings *ada_settings,
+    LbfgsSettings *lbfgs_settings, AdamSettings *adam_settings) {
   // Default settings; the dictionary changes these properties.
   *ada_settings = optimizer_adadelta_get_default();
+  *lbfgs_settings = optimizer_lbfgs_get_default();
+  *adam_settings = optimizer_adam_get_default();
   double stop_at = 1e-4;
   Option_Uint max_iters = option_none_uint();
   bool reparam_given = false;  // If no reparam is given, create one for all
@@ -613,6 +626,168 @@ static bool parse_optimization_settings(
         }
       }
       // Done with ADADELTA settings dict
+    }
+
+    // Try to get the LBFGS dict
+    PyObject *lbfgs_dict = PyDict_GetItemString(settings, "lbfgs");
+    if (lbfgs_dict != NULL) {
+      // Got an object for "lbfgs"! Check it is dictionary
+      if (!PyDict_Check(lbfgs_dict)) {
+        PyErr_SetString(PyExc_ValueError,
+                        "settings.lbfgs object must be a dictionary");
+        // Free the vectors
+        free_reparams_vector(reparams_vec);
+        vector_free(reparams_to_obj_pointer);
+        // Report error
+        return false;
+      }
+
+      // Object *is* dictionary, grab properties
+      // `m` property
+      {
+        PyObject *m = PyDict_GetItemString(lbfgs_dict, "m");
+        if (m != NULL) {
+          // `m` property is specified, check that it's a number
+          if (!PyNumber_Check(m)) {
+            // Got a non numeric `m`
+            PyErr_SetString(PyExc_ValueError,
+                            "settings.lbfgs.m object must be a number");
+
+            // Free the vectors
+            free_reparams_vector(reparams_vec);
+            vector_free(reparams_to_obj_pointer);
+
+            // Report error
+            return false;
+          }
+          // Confirmed `m` is a number, parse to C-number
+          lbfgs_settings->m = (unsigned int)(PyFloat_AsDouble(m));
+        }
+      }
+      // Alpha property
+      {
+        PyObject *alpha = PyDict_GetItemString(lbfgs_dict, "alpha");
+        if (alpha != NULL) {
+          // alpha property is specified, check that it's a number
+          if (!PyNumber_Check(alpha)) {
+            // Got a non-numeric alpha
+            PyErr_SetString(PyExc_ValueError,
+                            "settings.lbfgs.alpha object must be a number");
+
+            // Free the vectors
+            free_reparams_vector(reparams_vec);
+            vector_free(reparams_to_obj_pointer);
+
+            // Report error
+            return false;
+          }
+          // alpha is valid, parse it
+          lbfgs_settings->alpha = PyFloat_AsDouble(alpha);
+        }
+      }
+      // Done with LBFGS settings dict
+    }
+
+    // Try to get the ADAM dict
+    PyObject *adam_dict = PyDict_GetItemString(settings, "adam");
+    if (adam_dict != NULL) {
+      // Got an object for "adam"! Check it is dictionary
+      if (!PyDict_Check(adam_dict)) {
+        PyErr_SetString(PyExc_ValueError,
+                        "settings.adam object must be a dictionary");
+        // Free the vectors
+        free_reparams_vector(reparams_vec);
+        vector_free(reparams_to_obj_pointer);
+        // Report error
+        return false;
+      }
+
+      // Object *is* dictionary, grab properties
+      // `alpha` property
+      {
+        PyObject *alpha = PyDict_GetItemString(adam_dict, "alpha");
+        if (alpha != NULL) {
+          // `alpha` property is specified, check that it's a number
+          if (!PyNumber_Check(alpha)) {
+            // Got a non numeric `alpha`
+            PyErr_SetString(PyExc_ValueError,
+                            "settings.adam.alpha object must be a number");
+
+            // Free the vectors
+            free_reparams_vector(reparams_vec);
+            vector_free(reparams_to_obj_pointer);
+
+            // Report error
+            return false;
+          }
+          // Confirmed alpha is a number, parse to C-number
+          adam_settings->alpha = PyFloat_AsDouble(alpha);
+        }
+      }
+      // beta_one property
+      {
+        PyObject *beta_one = PyDict_GetItemString(adam_dict, "beta_one");
+        if (beta_one != NULL) {
+          // beta_one property is specified, check that it's a number
+          if (!PyNumber_Check(beta_one)) {
+            // Got a non-numeric beta_one
+            PyErr_SetString(PyExc_ValueError,
+                            "settings.adam.beta_one object must be a number");
+
+            // Free the vectors
+            free_reparams_vector(reparams_vec);
+            vector_free(reparams_to_obj_pointer);
+
+            // Report error
+            return false;
+          }
+          // beta_one is valid, parse it
+          adam_settings->beta_one = PyFloat_AsDouble(beta_one);
+        }
+      }
+      // beta_two property
+      {
+        PyObject *beta_two = PyDict_GetItemString(adam_dict, "beta_two");
+        if (beta_two != NULL) {
+          // beta_two property is specified, check that it's a number
+          if (!PyNumber_Check(beta_two)) {
+            // Got a non-numeric beta_two
+            PyErr_SetString(PyExc_ValueError,
+                            "settings.adam.beta_two object must be a number");
+
+            // Free the vectors
+            free_reparams_vector(reparams_vec);
+            vector_free(reparams_to_obj_pointer);
+
+            // Report error
+            return false;
+          }
+          // beta_two is valid, parse it
+          adam_settings->beta_two = PyFloat_AsDouble(beta_two);
+        }
+        // epsilon property
+        {
+          PyObject *epsilon = PyDict_GetItemString(adam_dict, "epsilon");
+          if (epsilon != NULL) {
+            // epsilon property is specified, check that it's a number
+            if (!PyNumber_Check(epsilon)) {
+              // Got a non-numeric epsilon
+              PyErr_SetString(PyExc_ValueError,
+                              "settings.adam.epsilon object must be a number");
+
+              // Free the vectors
+              free_reparams_vector(reparams_vec);
+              vector_free(reparams_to_obj_pointer);
+
+              // Report error
+              return false;
+            }
+            // epsilon is valid, parse it
+            adam_settings->epsilon = PyFloat_AsDouble(epsilon);
+          }
+        }
+      }
+      // Done with ADAM settings dict
     }
 
     // Try to get "optimize" subdictionary
@@ -1186,17 +1361,20 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
   // Arguments to be parsed
   PyObject *npy_hamiltonian;
   PyObject *settings = NULL;
+  OptimizerAlgorithm opt_algorithm = AlgoAdadelta;
   int writer_fd = -1;
 
   // Parse incoming arguments
   {
     PyObject *hamiltonian_obj = NULL;
     PyObject *given_writer = NULL;
+    const char *algo_id = "adadelta";
 
-    char *kwarg_names[] = {"hamiltonian", "settings", "writer", NULL};
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|O!O", kwarg_names,
+    char *kwarg_names[] = {"hamiltonian", "settings", "writer", "algorithm",
+                           NULL};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|O!Os", kwarg_names,
                                      &hamiltonian_obj, &PyDict_Type, &settings,
-                                     &given_writer)) {
+                                     &given_writer, &algo_id)) {
       // Could not parse the arguments
       PyErr_SetString(PyExc_ValueError,
                       "could not parse arguments to circuit optimization; "
@@ -1245,6 +1423,21 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
       }
       writer_fd = fdescriptor;
     }
+
+    // Parse the given algorithm name
+    // (remember `strcmp` returns the difference; `0` means match)
+    if (!strcmp(algo_id, "adadelta")) {
+      opt_algorithm = AlgoAdadelta;
+    } else if (!strcmp(algo_id, "lbfgs")) {
+      opt_algorithm = AlgoLbfgs;
+    } else if (!strcmp(algo_id, "adam")) {
+      opt_algorithm = AlgoAdam;
+    } else {
+      PyErr_SetString(PyExc_ValueError,
+                      "unknown optimization algorithm; "
+                      "use one of adadelta, lbfgs, adam");
+      return NULL;
+    }
   }
 
   // Prepare the circuit
@@ -1274,11 +1467,14 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
                                    //                     object gate)
   OptimizerSettings opt_settings;
   AdadeltaSettings ada_settings;
+  LbfgsSettings lbfgs_settings;
+  AdamSettings adam_settings;
   {
     bool success = parse_optimization_settings(
         settings, self,
         (double _Complex *)PyArray_DATA((PyArrayObject *)npy_hamiltonian),
-        &reparams_vec, &reparams_to_obj_pointer, &opt_settings, &ada_settings);
+        &reparams_vec, &reparams_to_obj_pointer, &opt_settings, &ada_settings,
+        &lbfgs_settings, &adam_settings);
     if (!success) {
       // Had some error in creating the optimization settings.
       // The error has already been set, so we just send the error
@@ -1292,8 +1488,21 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
   {
     OptimizerAlgoSettings opt_algo_settings;
     {
-      Result init_r = optimizer_algo_settings_init(&opt_algo_settings,
-                                                   AlgoAdadelta, &ada_settings);
+      Result init_r;
+      switch (opt_algorithm) {
+        case AlgoAdadelta:
+          optimizer_algo_settings_init(&opt_algo_settings, AlgoAdadelta,
+                                       &ada_settings);
+          break;
+        case AlgoLbfgs:
+          optimizer_algo_settings_init(&opt_algo_settings, AlgoLbfgs,
+                                       &lbfgs_settings);
+          break;
+        case AlgoAdam:
+          optimizer_algo_settings_init(&opt_algo_settings, AlgoAdam,
+                                       &adam_settings);
+          break;
+      }
       if (!init_r.valid) {
         optimizer_settings_free(&opt_settings);
         free_reparams_vector(&reparams_vec);

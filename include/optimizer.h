@@ -38,14 +38,34 @@ AdadeltaSettings optimizer_adadelta_get_default();
 
 typedef struct LbfgsSettings {
   unsigned int m;  // How many past iterations to "remember"
-  double alpha; // The update factor; should be within Wolfe conditions
+  double alpha;    // The update factor; should be within Wolfe conditions
 } LbfgsSettings;
 
+// Returns a default `LbfgsSettings` struct.
+// The number 3 was chosen based on the remark by Nocedal (2006) that
+// > Practical experience has shown that modest values of m
+// > (between 3 and 20, say) often produce satisfactory results.
+// The alpha of 1 is also based on the remark that
+// > as a result [of the estimation of H] the step length alpha = 1 is
+// accepted in most iterations
 LbfgsSettings optimizer_lbfgs_get_default();
+
+typedef struct AdamSettings {
+  double alpha;
+  double beta_one;
+  double beta_two;
+  double epsilon;
+} AdamSettings;
+
+// Returns a default `AdamSettings` struct.
+// The values are those suggested in the caption of algorithm 1, in the
+// original ADAM paper (arXiv:1412.6980).
+AdamSettings optimizer_adam_get_default();
 
 typedef enum OptimizerAlgorithm {
   AlgoAdadelta,
   AlgoLbfgs,
+  AlgoAdam,
 } OptimizerAlgorithm;
 
 typedef struct OptimizerAlgoSettings {
@@ -53,6 +73,7 @@ typedef struct OptimizerAlgoSettings {
   union {
     AdadeltaSettings ada_settings;
     LbfgsSettings lbfgs_settings;
+    AdamSettings adam_settings;
   } specific;
 } OptimizerAlgoSettings;
 
@@ -207,6 +228,11 @@ OptimizationResult optimizer_optimize_adadelta(
 
 // TODO: Comment
 OptimizationResult optimizer_optimize_lbfgs(
+    Optimizer *optimizer, OptimizerParamCallback param_callback,
+    OptimizerEnergyCallback energy_callback, void *callback_context);
+
+// TODO: Comment
+OptimizationResult optimizer_optimize_adam(
     Optimizer *optimizer, OptimizerParamCallback param_callback,
     OptimizerEnergyCallback energy_callback, void *callback_context);
 

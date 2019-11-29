@@ -13,18 +13,21 @@ AdadeltaSettings optimizer_adadelta_get_default() {
   ada_default.epsilon = 1.0e-6;
   return ada_default;
 }
-// Returns a default `LbfgsSettings` struct.
-// The number 3 was chosen based on the remark by Nocedal (2006) that
-// > Practical experience has shown that modest values of m
-// > (between 3 and 20, say) often produce satisfactory results.
-// The alpha of 1 is also based on the remark that
-// > as a result [of the estimation of H] the step length alpha = 1 is
-// accepted in most iterations
+
 LbfgsSettings optimizer_lbfgs_get_default() {
   LbfgsSettings lbfgs_settings;
   lbfgs_settings.m = 3;
   lbfgs_settings.alpha = 1;
   return lbfgs_settings;
+}
+
+AdamSettings optimizer_adam_get_default() {
+  AdamSettings adam_settings;
+  adam_settings.alpha = 0.001;
+  adam_settings.beta_one = 0.9;
+  adam_settings.beta_two = 0.999;
+  adam_settings.epsilon = 1e-8;
+  return adam_settings;
 }
 
 // TODO: Comment
@@ -40,6 +43,10 @@ Result optimizer_algo_settings_init(OptimizerAlgoSettings *algo_settings,
     case AlgoLbfgs: {
       memcpy(&algo_settings->specific.lbfgs_settings, specific_settings,
              sizeof(LbfgsSettings));
+    } break;
+    case AlgoAdam: {
+      memcpy(&algo_settings->specific.adam_settings, specific_settings,
+             sizeof(AdamSettings));
     } break;
     default:
       return result_get_invalid_reason("unknown algorithm");
@@ -320,11 +327,42 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer,
       return optimizer_optimize_lbfgs(optimizer, param_callback,
                                       energy_callback, callback_context);
       break;
+    case AlgoAdam:
+      return optimizer_optimize_adam(optimizer, param_callback, energy_callback,
+                                     callback_context);
+      break;
     default:
       return result_as_optimization_result(
           result_get_invalid_reason("Unknown algorithm."));
       break;
   }
+}
+
+static void report_energy(unsigned int state_size,
+                          OptimizerSettings opt_settings, Circuit *circuit,
+                          OptimizerEnergyCallback energy_callback,
+                          void *callback_context) {
+  double _Complex energy = 0;
+  double _Complex current_phi_state[state_size];
+  memcpy(current_phi_state, opt_settings.zero_state,
+         sizeof(double _Complex) * (unsigned long int)state_size);
+  circuit_run(circuit, &current_phi_state);
+
+  for (unsigned int i = 0; i < opt_settings.hamiltonian.size; ++i) {
+    Vector *row = (Vector *)opt_settings.hamiltonian.data + i;
+    for (unsigned int u = 0; u < row->size; ++u) {
+      OptimizerDCPackedRowElem elem =
+          *((OptimizerDCPackedRowElem *)row->data + u);
+      unsigned int j = elem.j;
+      double _Complex value = elem.value;
+      if (i == j)
+        energy += conj(current_phi_state[i]) * value * current_phi_state[j];
+      else
+        energy += 2 * conj(current_phi_state[i]) * value * current_phi_state[j];
+    }
+  }
+
+  energy_callback(energy, callback_context);
 }
 
 // Performs a circuit optimization using the ADADELTA algorithm, very
@@ -576,29 +614,8 @@ OptimizationResult optimizer_optimize_adadelta(
 
       // Optionally calculate and report energy
       if (energy_callback != NULL) {
-        double _Complex energy = 0;
-        double _Complex current_phi_state[state_size];
-        memcpy(current_phi_state, opt_settings.zero_state,
-               sizeof(double _Complex) * (unsigned long int)state_size);
-        circuit_run(circuit, &current_phi_state);
-
-        for (unsigned int i = 0; i < opt_settings.hamiltonian.size; ++i) {
-          Vector *row = (Vector *)opt_settings.hamiltonian.data + i;
-          for (unsigned int u = 0; u < row->size; ++u) {
-            OptimizerDCPackedRowElem elem =
-                *((OptimizerDCPackedRowElem *)row->data + u);
-            unsigned int j = elem.j;
-            double _Complex value = elem.value;
-            if (i == j)
-              energy +=
-                  conj(current_phi_state[i]) * value * current_phi_state[j];
-            else
-              energy +=
-                  2 * conj(current_phi_state[i]) * value * current_phi_state[j];
-          }
-        }
-
-        energy_callback(energy, callback_context);
+        report_energy(state_size, opt_settings, circuit, energy_callback,
+                      callback_context);
       }
     }
   }
@@ -622,12 +639,12 @@ OptimizationResult optimizer_optimize_adadelta(
   return result;
 }
 
-// Helper function for the LBFGS optimization routine.
+// Helper function for the optimization routines.
 // Calculates the gradient over the parameters of the circuit w.r.t. the
 // expectation value of the hamiltonian over the in-output of |0> This function
 // is not used in the ADADELTA routine (which contains almost a copy of the
 // code), because that version performs ADADELTA specific operations while
-// calculating the gradient. (This is not the case for LBFGS.)
+// calculating the gradient.
 static Result calculate_gradient(double (*gradient)[],
                                  unsigned int abs_param_count,
                                  OptimizerSettings opt_settings,
@@ -915,7 +932,7 @@ OptimizationResult optimizer_optimize_lbfgs(
           }
 
           iter_index--;
-        } // Finished iterating over `grad_delta_memory`
+        }  // Finished iterating over `grad_delta_memory`
 
         iter_free(&grad_delta_iter);
         iter_free(&step_delta_iter);
@@ -1067,29 +1084,8 @@ OptimizationResult optimizer_optimize_lbfgs(
 
     // Calculate energy if needed
     if (energy_callback != NULL) {
-      // TODO: Put this in a common function!
-      double _Complex energy = 0;
-      double _Complex current_phi_state[state_size];
-      memcpy(current_phi_state, opt_settings.zero_state,
-             sizeof(double _Complex) * (unsigned long int)state_size);
-      circuit_run(circuit, &current_phi_state);
-
-      for (unsigned int i = 0; i < opt_settings.hamiltonian.size; ++i) {
-        Vector *row = (Vector *)opt_settings.hamiltonian.data + i;
-        for (unsigned int u = 0; u < row->size; ++u) {
-          OptimizerDCPackedRowElem elem =
-              *((OptimizerDCPackedRowElem *)row->data + u);
-          unsigned int j = elem.j;
-          double _Complex value = elem.value;
-          if (i == j)
-            energy += conj(current_phi_state[i]) * value * current_phi_state[j];
-          else
-            energy +=
-                2 * conj(current_phi_state[i]) * value * current_phi_state[j];
-        }
-      }
-
-      energy_callback(energy, callback_context);
+      report_energy(state_size, opt_settings, circuit, energy_callback,
+                    callback_context);
     }
 
     // If the dequeues are full, pop an item
@@ -1145,6 +1141,148 @@ OptimizationResult optimizer_optimize_lbfgs(
   // Free local variables
   dequeue_free(&step_memory);
   dequeue_free(&grad_delta_memory);
+
+  // Done!
+  OptimizationResult result;
+  if (opt_settings.max_iterations.some &&
+      iter_count >= opt_settings.max_iterations.data)
+    result.quit_on_max_iter = true;
+  else
+    result.quit_on_max_iter = false;
+  result.valid = true;
+  result.content.data = circuit;
+  return result;
+}
+
+// TODO
+OptimizationResult optimizer_optimize_adam(
+    Optimizer *optimizer, OptimizerParamCallback param_callback,
+    OptimizerEnergyCallback energy_callback, void *callback_context) {
+  // Aliases for commonly used values
+  const AdamSettings adam_settings =
+      optimizer->algo_settings.specific.adam_settings;
+  OptimizerSettings opt_settings = optimizer->opt_settings;
+  Circuit *circuit = opt_settings.circuit;
+  const unsigned int state_size = 1U << circuit->depth[0];
+
+  // Check validity of optimizer
+  if (optimizer == NULL) {
+    Result invalid_result = result_get_invalid_reason("optimizer is null");
+    return result_as_optimization_result(invalid_result);
+  }
+
+  // Count the number of parameters
+  unsigned int abs_param_count = 0;
+  {
+    unsigned int reparams_count = opt_settings.reparams_count;
+    for (unsigned int reparam_index = 0; reparam_index < reparams_count;
+         ++reparam_index) {
+      abs_param_count += opt_settings.reparams[reparam_index].param_count;
+    }
+  }
+
+  // Iteration count; this will only be useful if there is a max
+  // iteration count allowed
+  unsigned long int iter_count = 0;
+
+  // 2-norm of the step
+  // Used to break out of the optimization based on `stop_at`
+  double step_two_norm = opt_settings.stop_at + 1;
+
+  // Buffers for state at left and right of the parameters
+  // This is needed to approximate the gradient
+  double _Complex buff_left[abs_param_count];
+  double _Complex buff_right[abs_param_count];
+
+  // Momentum vectors
+  double moment_one[abs_param_count];
+  double moment_two[abs_param_count];
+  memset(moment_one, 0, sizeof(double) * abs_param_count);
+  memset(moment_two, 0, sizeof(double) * abs_param_count);
+
+  // Optimization cycle:
+  while (step_two_norm > opt_settings.stop_at) {
+    // If there's a maximum number of iterations, break as appropriate
+    // Keep count of the iterations anyway, as they're needed in ADAM
+    iter_count++;
+    if (opt_settings.max_iterations.some) {
+      if (iter_count >= opt_settings.max_iterations.data) break;
+    }
+
+    // Gradient over the parameters, w.r.t. the expectation value of the
+    //  Hamiltonian over the output
+    double gradient[abs_param_count];
+    {
+      Result grad_r =
+          calculate_gradient(&gradient, abs_param_count, opt_settings,
+                             &buff_left, &buff_right, state_size, circuit);
+      if (!grad_r.valid) {
+        return result_as_optimization_result(grad_r);
+      }
+    }
+
+    // Reset the step two norm; this will be calculated later
+    step_two_norm = 0;
+
+    // Do the following component-wise
+    {
+      unsigned int flat_index = 0;
+      Iter param_iter = iter_create_contiguous_memory(
+          opt_settings.reparams, sizeof(GateParameterization),
+          opt_settings.reparams_count);
+      Option next;
+      while ((next = iter_next(&param_iter)).some) {
+        GateParameterization *param = (GateParameterization *)(next.data);
+        Iter subparam_iter = iter_create_contiguous_memory(
+            param->params, sizeof(double), param->param_count);
+        Iter deltas_iter = iter_create_contiguous_memory(
+            param->deltas, sizeof(double), param->param_count);
+        // For each parameter in that gate parameterization...
+        while ((next = iter_next(&subparam_iter)).some) {
+          double *subparam = (double *)(next.data);
+          // Update first moment
+          moment_one[flat_index] =
+              adam_settings.beta_one * moment_one[flat_index] +
+              (1. - adam_settings.beta_one) * gradient[flat_index];
+
+          // Update second moment
+          moment_two[flat_index] =
+              adam_settings.beta_two * moment_two[flat_index] +
+              (1. - adam_settings.beta_two) * pow(gradient[flat_index], 2);
+
+          // Calculate the hat moments
+          double hat_one =
+              moment_one[flat_index] /
+              (1. - pow(adam_settings.beta_one, (double)iter_count));
+          double hat_two =
+              moment_two[flat_index] /
+              (1. - pow(adam_settings.beta_two, (double)iter_count));
+
+          // Step
+          double step = -adam_settings.alpha * hat_one /
+                        (sqrt(hat_two) + adam_settings.epsilon);
+
+          // Update the variable
+          *subparam += step;
+
+          // Calculate the two norm (this component)
+          step_two_norm += pow(step, 2);
+
+          flat_index++;
+        }  // Done with subparam
+        iter_free(&subparam_iter);
+      }  // Done with param
+      iter_free(&param_iter);
+    }
+  }  // Done with optimize
+
+  // Reparameterize all gates so that they match
+  // last calculated parameters
+  for (unsigned int reparam_index = 0;
+       reparam_index < opt_settings.reparams_count; ++reparam_index) {
+    GateParameterization *param = opt_settings.reparams + reparam_index;
+    param->gate->reparamFn(&param->gate->matrix, param->params);
+  }
 
   // Done!
   OptimizationResult result;
