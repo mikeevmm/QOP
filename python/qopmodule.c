@@ -486,6 +486,80 @@ static PyObject *qop_circuit_add_gate(QopCircuitObject *self, PyObject *args,
   return Py_None;
 }
 
+// Reads the parameters of every gate added to the circuit, and
+// returns the values as a tuple
+static PyObject *qop_circuit_get_parameters(QopCircuitObject *self) {
+  // Get the parameterized gates on the circuit
+  Vector param_gates;
+  {
+    Result init_r = vector_init(&param_gates, sizeof(QopGateObject *), 0);
+    if (!init_r.valid) {
+      PyErr_SetString(QopError, init_r.content.error_details.reason);
+      return NULL;
+    }
+  }
+
+  {
+    Iter py_gate_iter = vector_iter_create(&self->gate_obj_refs);
+    Option next;
+    while ((next = iter_next(&py_gate_iter)).some) {
+      QopGateObject *qop_gate = *(QopGateObject **)next.data;
+      if (qop_gate->param_count != 0) vector_push(&param_gates, &qop_gate);
+    }
+    iter_free(&py_gate_iter);
+  }
+
+  // Create the result tuple to return
+  PyObject *result_tuple = PyTuple_New((Py_ssize_t)param_gates.size);
+
+  {
+    Iter param_gate_iter = vector_iter_create(&param_gates);
+    Option next;
+    unsigned int tuple_index = 0;
+    while ((next = iter_next(&param_gate_iter)).some) {
+      QopGateObject *qop_gate = *(QopGateObject **)next.data;
+
+      // Get the gate's parameters
+      // This is a new reference
+      PyObject *params = qop_gate_get_parameters(qop_gate);
+      if (params == NULL) {
+        // Free as necessary
+        iter_free(&param_gate_iter);
+        vector_free(&param_gates);
+
+        // Raise the error
+        return NULL;
+      }
+
+      // Put the parameters into the tuple
+      {
+        int set_succ =
+            PyTuple_SetItem(result_tuple, (Py_ssize_t)tuple_index, params);
+        if (set_succ < 0) {
+          // Failed to set element of tuple for some reason
+          // Free as appropriate
+          iter_free(&param_gate_iter);
+          vector_free(&param_gates);
+
+          // Send error upstream
+          return NULL;
+        }
+      }
+
+      tuple_index++;
+    }
+    iter_free(&param_gate_iter);
+  }
+
+  // Free the vector
+  vector_free(&param_gates);
+
+  // Return the result tuple
+  // PyTuple_New already returns a new reference, so there is no need
+  // to INCREF it
+  return result_tuple;
+}
+
 // Helper function for `parse_optimization_settings`
 // Releases not only the vector, but all the `GateParameterization`s
 // it contains.
@@ -885,46 +959,53 @@ static bool parse_optimization_settings(
         // will fail for lists and tuples. Whether this is by design
         // or a bug is unknown, but the iterator API seems to work
         // fine with these two types as well.
+        // UPDATE: Even checking the tuple type seems to fail for more
+        // fringe cases, like `(0.1,) * len(x)`, so I've decided not to
+        // check the type at all. Worst case scenario, an odd internal
+        // error will pop up, but since `PyIter_Next` returning NULL
+        // should be handled, it should not be a problem in the long run.
         {
-          // Check gates type
-          if (!(PyList_Check(gates) || PyTuple_Check(gates) ||
-                PyIter_Check(gates))) {
-            // The gates object is not iterable
-            PyErr_SetString(PyExc_ValueError,
-                            "settings.optimize.gates object must be iterable");
-            // DECREF appropriate objects
-            // Use XDECREF for gates and deltas, since we don't know
-            // which are NULL
-            Py_XDECREF(gates);
-            Py_XDECREF(deltas);
+            // Check gates type
+            /*if (!(PyList_Check(gates) || PyTuple_Check(gates) ||
+                  PyIter_Check(gates))) {
+              // The gates object is not iterable
+              PyErr_SetString(PyExc_ValueError,
+                              "settings.optimize.gates object must be
+            iterable");
+              // DECREF appropriate objects
+              // Use XDECREF for gates and deltas, since we don't know
+              // which are NULL
+              Py_XDECREF(gates);
+              Py_XDECREF(deltas);
 
-            // Free vectors
-            free_reparams_vector(reparams_vec);
-            vector_free(reparams_to_obj_pointer);
+              // Free vectors
+              free_reparams_vector(reparams_vec);
+              vector_free(reparams_to_obj_pointer);
 
-            // Report error
-            return false;
-          }
+              // Report error
+              return false;
+            }*/
 
-          // Check deltas type
-          if (!(PyList_Check(deltas) || PyTuple_Check(deltas) ||
-                PyIter_Check(deltas))) {
-            // The gates object is not iterable
-            PyErr_SetString(PyExc_ValueError,
-                            "settings.optimize.deltas object must be iterable");
-            // DECREF appropriate objects
-            // Use XDECREF for gates and deltas, since we don't know
-            // which are NULL
-            Py_XDECREF(gates);
-            Py_XDECREF(deltas);
+            // Check deltas type
+            /*if (!(PyList_Check(deltas) || PyTuple_Check(deltas) ||
+                  PyIter_Check(deltas))) {
+              // The gates object is not iterable
+              PyErr_SetString(PyExc_ValueError,
+                              "settings.optimize.deltas object must be
+            iterable");
+              // DECREF appropriate objects
+              // Use XDECREF for gates and deltas, since we don't know
+              // which are NULL
+              Py_XDECREF(gates);
+              Py_XDECREF(deltas);
 
-            // Free vectors
-            free_reparams_vector(reparams_vec);
-            vector_free(reparams_to_obj_pointer);
+              // Free vectors
+              free_reparams_vector(reparams_vec);
+              vector_free(reparams_to_obj_pointer);
 
-            // Report error
-            return false;
-          }
+              // Report error
+              return false;
+            }*/
         }
 
         // Iterate over `gates` and `deltas` simultaneously, using
@@ -1008,7 +1089,8 @@ static bool parse_optimization_settings(
               // We have a delta collection object for this gate.
               // Check that it can be iterated over
               // Again, we must check for all of (list, tuple, iter)
-              if (!(PyList_Check(next_delta_collection) ||
+              // UPDATE: We do not; see comment above.
+              /*if (!(PyList_Check(next_delta_collection) ||
                     PyTuple_Check(next_delta_collection) ||
                     PyIter_Check(next_delta_collection))) {
                 // The delta collection is not iterable
@@ -1028,7 +1110,7 @@ static bool parse_optimization_settings(
 
                 // Report error
                 return false;
-              }
+              }*/
 
               // Confirmed that we can iterate over the delta collection.
               // Iterate over the deltas; move these into a vector
@@ -1378,7 +1460,7 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
       // Could not parse the arguments
       PyErr_SetString(PyExc_ValueError,
                       "could not parse arguments to circuit optimization; "
-                      "expected (hamiltonian, settings?, writer?)");
+                      "expected (hamiltonian, settings?, writer?, algorithm?)");
       return NULL;
     }
 

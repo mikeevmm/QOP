@@ -39,6 +39,8 @@ AdadeltaSettings optimizer_adadelta_get_default(void);
 typedef struct LbfgsSettings {
   unsigned int m;  // How many past iterations to "remember"
   double alpha;    // The update factor; should be within Wolfe conditions
+  double epsilon;  // The `eps` factor; used to decide if an update should
+                   // be stored
 } LbfgsSettings;
 
 // Returns a default `LbfgsSettings` struct.

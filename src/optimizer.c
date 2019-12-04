@@ -18,6 +18,7 @@ LbfgsSettings optimizer_lbfgs_get_default() {
   LbfgsSettings lbfgs_settings;
   lbfgs_settings.m = 3;
   lbfgs_settings.alpha = 1;
+  lbfgs_settings.epsilon = 1.0e-6;
   return lbfgs_settings;
 }
 
@@ -857,9 +858,11 @@ OptimizationResult optimizer_optimize_lbfgs(
     // Also calculate two norm!
     grad_two_norm = 0;
     double grad_delta[abs_param_count];
+    double grad_delta_two_norm = 0;
     for (unsigned int i = 0; i < abs_param_count; ++i) {
       grad_delta[i] = gradient[i] - last_gradient[i];
       grad_two_norm += pow(gradient[i], 2);
+      grad_delta_two_norm += grad_delta[i] * grad_delta[i];
       last_gradient[i] = gradient[i];
     }
 
@@ -1086,50 +1089,58 @@ OptimizationResult optimizer_optimize_lbfgs(
 
     // Report energy if needed
     if (energy_callback != NULL) {
-      // report_energy(state_size, &opt_settings, circuit, energy_callback,
-      //              callback_context);
+      report_energy(state_size, &opt_settings, circuit, energy_callback,
+                    callback_context);
     }
 
-    // If the dequeues are full, pop an item
-    if (step_memory.size == lbfgs_settings.m) {
-      Result pop_r = dequeue_pop_back(&step_memory, NULL);
-      if (!pop_r.valid) {
-        dequeue_free(&step_memory);
-        dequeue_free(&grad_delta_memory);
-        return result_as_optimization_result(pop_r);
-      }
-    }
 
-    // Push the step to the memory; it's just `gradient`!
-    // (Because we reversed and multiplied by alpha before)
-    {
-      Result push_r = dequeue_push_front(&step_memory, (void *)gradient);
-      if (!push_r.valid) {
-        dequeue_free(&step_memory);
-        dequeue_free(&grad_delta_memory);
-        return result_as_optimization_result(push_r);
+    // From Byrd et al.; maintain the positive definiteness of the matrix
+    double sy = 0;
+    for (unsigned int i = 0; i < abs_param_count; ++i) sy += last_gradient[i]*gradient[i];
+    if (sy > lbfgs_settings.epsilon * grad_delta_two_norm) {
+      // Condition satisfied; push to queue
+      
+      // If the dequeues are full, pop an item
+      if (step_memory.size == lbfgs_settings.m) {
+        Result pop_r = dequeue_pop_back(&step_memory, NULL);
+        if (!pop_r.valid) {
+          dequeue_free(&step_memory);
+          dequeue_free(&grad_delta_memory);
+          return result_as_optimization_result(pop_r);
+        }
       }
-    }
 
-    if (grad_delta_memory.size == lbfgs_settings.m) {
-      Result pop_r = dequeue_pop_back(&grad_delta_memory, NULL);
-      if (!pop_r.valid) {
-        dequeue_free(&step_memory);
-        dequeue_free(&grad_delta_memory);
-        return result_as_optimization_result(pop_r);
+      // Push the step to the memory; it's just `gradient`!
+      // (Because we reversed and multiplied by alpha before)
+      {
+        Result push_r = dequeue_push_front(&step_memory, (void *)gradient);
+        if (!push_r.valid) {
+          dequeue_free(&step_memory);
+          dequeue_free(&grad_delta_memory);
+          return result_as_optimization_result(push_r);
+        }
       }
-    }
 
-    // Push the gradient delta to the memory
-    {
-      Result push_r =
-          dequeue_push_front(&grad_delta_memory, (void *)grad_delta);
-      if (!push_r.valid) {
-        dequeue_free(&step_memory);
-        dequeue_free(&grad_delta_memory);
-        return result_as_optimization_result(push_r);
+      if (grad_delta_memory.size == lbfgs_settings.m) {
+        Result pop_r = dequeue_pop_back(&grad_delta_memory, NULL);
+        if (!pop_r.valid) {
+          dequeue_free(&step_memory);
+          dequeue_free(&grad_delta_memory);
+          return result_as_optimization_result(pop_r);
+        }
       }
-    }  // done pushing
+
+      // Push the gradient delta to the memory
+      {
+        Result push_r =
+            dequeue_push_front(&grad_delta_memory, (void *)grad_delta);
+        if (!push_r.valid) {
+          dequeue_free(&step_memory);
+          dequeue_free(&grad_delta_memory);
+          return result_as_optimization_result(push_r);
+        }
+    }  // done pushing grad delta
+    } // done pushing to memory
   }    // Done with optimize
 
   // Reparameterize all gates so that they match

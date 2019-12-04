@@ -31,8 +31,7 @@ int main(void) {
 
   // Fix the seed so that results are reproducible
   // Paul Dirac was born on 8th Aug 1902 :)
-  //srand(8081902);
-  srand(time(NULL));
+  srand(8081902);
 
   // First push all gates, to make sure their memory position doesn't
   // change
@@ -109,7 +108,7 @@ int main(void) {
   OptimizerAlgoSettings algo_settings;
   {
     LbfgsSettings lbfgs_settings = optimizer_lbfgs_get_default();
-    lbfgs_settings.alpha = 0.09;
+    lbfgs_settings.alpha = 0.1;
     optimizer_algo_settings_init(&algo_settings, AlgoLbfgs,
                                  (void *)(&lbfgs_settings));
     /*
