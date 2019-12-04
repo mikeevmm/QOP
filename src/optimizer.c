@@ -1,5 +1,9 @@
 #include "include/optimizer.h"
 
+#define PRINT(v, l)                                         \
+  for (unsigned int i = 0; i < l; ++i) printf("%e ", v[i]); \
+  printf("\n");
+
 // Returns a default `AdadeltaSettings` struct.
 // The default values here passed are the same used in section 4.1. of
 // the ADADELTA paper (arXiv:1212.5701).
@@ -8,6 +12,48 @@ AdadeltaSettings optimizer_adadelta_get_default() {
   ada_default.rho = 0.95;
   ada_default.epsilon = 1.0e-6;
   return ada_default;
+}
+
+LbfgsSettings optimizer_lbfgs_get_default() {
+  LbfgsSettings lbfgs_settings;
+  lbfgs_settings.m = 3;
+  lbfgs_settings.alpha = 1;
+  lbfgs_settings.epsilon = 1.0e-6;
+  return lbfgs_settings;
+}
+
+AdamSettings optimizer_adam_get_default() {
+  AdamSettings adam_settings;
+  adam_settings.alpha = 0.001;
+  adam_settings.beta_one = 0.9;
+  adam_settings.beta_two = 0.999;
+  adam_settings.epsilon = 1e-8;
+  return adam_settings;
+}
+
+// TODO: Comment
+Result optimizer_algo_settings_init(OptimizerAlgoSettings *algo_settings,
+                                    OptimizerAlgorithm algorithm,
+                                    void *specific_settings) {
+  algo_settings->algorithm = algorithm;
+  switch (algorithm) {
+    case AlgoAdadelta: {
+      memcpy(&algo_settings->specific.ada_settings, specific_settings,
+             sizeof(AdadeltaSettings));
+    } break;
+    case AlgoLbfgs: {
+      memcpy(&algo_settings->specific.lbfgs_settings, specific_settings,
+             sizeof(LbfgsSettings));
+    } break;
+    case AlgoAdam: {
+      memcpy(&algo_settings->specific.adam_settings, specific_settings,
+             sizeof(AdamSettings));
+    } break;
+    default:
+      return result_get_invalid_reason("unknown algorithm");
+      break;
+  }
+  return result_get_empty_valid();
 }
 
 // Initializes a new `GateParameterization` object.
@@ -79,8 +125,8 @@ Result optimizer_settings_init(OptimizerSettings *opt_settings,
       return result_get_invalid_reason("could not malloc");
     }
     zero_state = mem;
-    memset(zero_state, 0, state_size * sizeof(double _Complex));
     zero_state[0] = 1.;
+    for (unsigned int i = 1; i < state_size; ++i) zero_state[i] = 0.;
   }
 
   // Create a compacted representation of the hamiltonian matrix.
@@ -142,6 +188,7 @@ void optimizer_settings_free(OptimizerSettings *opt_settings) {
       Vector *row = (Vector *)next_row.data;
       vector_free(row);
     }
+    iter_free(&row_iter);
     vector_free(&opt_settings->hamiltonian);
   }
   // Free |000>
@@ -149,12 +196,12 @@ void optimizer_settings_free(OptimizerSettings *opt_settings) {
 }
 
 // Initializes a new `Optimizer` object.
-// This is just a glorified (`OptimizerSettings`, `AdadeltaSettings`)
+// This is just a glorified (`OptimizerSettings`, `OptimizerAlgoSettings`)
 // pair.
 Result optimizer_init(Optimizer *optimizer, OptimizerSettings opt_settings,
-                      AdadeltaSettings ada_settings) {
+                      OptimizerAlgoSettings algo_settings) {
   optimizer->opt_settings = opt_settings;
-  optimizer->ada_settings = ada_settings;
+  optimizer->algo_settings = algo_settings;
   return result_get_empty_valid();
 }
 
@@ -174,36 +221,6 @@ OptimizationResult result_as_optimization_result(Result result) {
 
 // Performs the actual optimization of the parameters pointed to in the
 // `OptimizationSettings` object.
-// The optimization routine itself is just the ADADELTA algorithm, very
-// neatly presented in the paper and copied here for convenience:
-//
-//  =====================================================
-//  **Algorithm 1** Computing ADADELTA update at time $t$
-//  -----------------------------------------------------
-//  **Require**: Decay rate $\rho$, Constant $\epsilon$
-//  **Require**: Initial parameter $x_1$
-//  1: Initialize accumulation variables $E[g^2]_0 = 0$,
-//     $E[\Delta x^2]_0 = 0$
-//  2: **for** $t=1$ **do** %% Loop over # of updates
-//  3:    Compute Gradient: $g_t$
-//  4:    Accumulate Gradient:
-//       $E[g^2]_t = \rho E[g^2]_{t-1} + (1 - \rho) g_t^2
-//  5:    Compute Update:
-//       $\Delta x_t = -\frac{RMS[\Delta x]_{t-1}}{RMS[g]_t} g_t$
-//  6:    Accumulate Updates:
-//       $E[\Delta x^2]_t = \rho E[\Delta x^2]_{t-1} +
-//                                       (1 - \rho) \Delta x_t^2$
-//  7:    Apply Update: $x_{t+1} = x_t + \Delta x_t$
-//  =====================================================
-//
-// In this particular case, the "position" vector is considered to be
-// the vector of all concatenated parameters, and the computation of the
-// gradient is based on a simple finite difference approximation, with
-// further algebraic optimization (see below). Further, it is also of
-// notice that some of the above steps were compacted into a single
-// pass over the gates (since the above algorithm is phrased "vectorially",
-// while the programmatic approach is component-wise). Such compactions
-// are commented appropriately inline.
 // The gradient calculation routine is as follows:
 //
 // 1. Offset each parameter $\theta_i$ by $+\Delta_i$, making the
@@ -302,7 +319,88 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer,
                                       OptimizerParamCallback param_callback,
                                       OptimizerEnergyCallback energy_callback,
                                       void *callback_context) {
-  const AdadeltaSettings ada_settings = optimizer->ada_settings;
+  switch (optimizer->algo_settings.algorithm) {
+    case AlgoAdadelta:
+      return optimizer_optimize_adadelta(optimizer, param_callback,
+                                         energy_callback, callback_context);
+      break;
+    case AlgoLbfgs:
+      return optimizer_optimize_lbfgs(optimizer, param_callback,
+                                      energy_callback, callback_context);
+      break;
+    case AlgoAdam:
+      return optimizer_optimize_adam(optimizer, param_callback, energy_callback,
+                                     callback_context);
+      break;
+    default:
+      return result_as_optimization_result(
+          result_get_invalid_reason("Unknown algorithm."));
+      break;
+  }
+}
+
+static void report_energy(unsigned int state_size,
+                          OptimizerSettings *opt_settings, Circuit *circuit,
+                          OptimizerEnergyCallback energy_callback,
+                          void *callback_context) {
+  double _Complex energy = 0;
+  double _Complex current_phi_state[state_size];
+  for (unsigned int i = 0; i < state_size; ++i)
+    current_phi_state[i] = opt_settings->zero_state[i];
+  circuit_run(circuit, &current_phi_state);
+
+  for (unsigned int i = 0; i < opt_settings->hamiltonian.size; ++i) {
+    Vector *row = (Vector *)opt_settings->hamiltonian.data + i;
+    for (unsigned int u = 0; u < row->size; ++u) {
+      OptimizerDCPackedRowElem elem =
+          *((OptimizerDCPackedRowElem *)row->data + u);
+      unsigned int j = elem.j;
+      double _Complex value = elem.value;
+      if (i == j)
+        energy += conj(current_phi_state[i]) * value * current_phi_state[j];
+      else
+        energy += 2 * conj(current_phi_state[i]) * value * current_phi_state[j];
+    }
+  }
+
+  (*energy_callback)(energy, callback_context);
+}
+
+// Performs a circuit optimization using the ADADELTA algorithm, very
+// neatly presented in the paper and copied here for convenience:
+//
+//  =====================================================
+//  **Algorithm 1** Computing ADADELTA update at time $t$
+//  -----------------------------------------------------
+//  **Require**: Decay rate $\rho$, Constant $\epsilon$
+//  **Require**: Initial parameter $x_1$
+//  1: Initialize accumulation variables $E[g^2]_0 = 0$,
+//     $E[\Delta x^2]_0 = 0$
+//  2: **for** $t=1$ **do** %% Loop over # of updates
+//  3:    Compute Gradient: $g_t$
+//  4:    Accumulate Gradient:
+//       $E[g^2]_t = \rho E[g^2]_{t-1} + (1 - \rho) g_t^2
+//  5:    Compute Update:
+//       $\Delta x_t = -\frac{RMS[\Delta x]_{t-1}}{RMS[g]_t} g_t$
+//  6:    Accumulate Updates:
+//       $E[\Delta x^2]_t = \rho E[\Delta x^2]_{t-1} +
+//                                       (1 - \rho) \Delta x_t^2$
+//  7:    Apply Update: $x_{t+1} = x_t + \Delta x_t$
+//  =====================================================
+//
+// In this particular case, the "position" vector is considered to be
+// the vector of all concatenated parameters, and the computation of the
+// gradient is based on a simple finite difference approximation, with
+// further algebraic optimization (see below). Further, it is also of
+// notice that some of the above steps were compacted into a single
+// pass over the gates (since the above algorithm is phrased "vectorially",
+// while the programmatic approach is component-wise). Such compactions
+// are commented appropriately inline.
+OptimizationResult optimizer_optimize_adadelta(
+    Optimizer *optimizer, OptimizerParamCallback param_callback,
+    OptimizerEnergyCallback energy_callback, void *callback_context) {
+  const AdadeltaSettings ada_settings =
+      optimizer->algo_settings.specific.ada_settings;
   OptimizerSettings opt_settings = optimizer->opt_settings;
   Circuit *circuit = opt_settings.circuit;
   const unsigned int state_size = 1U << circuit->depth[0];
@@ -349,7 +447,7 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer,
     // Initialize the gradient array
     // The parameters here are "flattened"
     double param_gradient[abs_param_count];
-    memset(param_gradient, 0, sizeof(double) * abs_param_count);
+    for (unsigned int i = 0; i < abs_param_count; ++i) param_gradient[i] = 0.;
 
     // Buffers to write the result of the simulation at left and right
     // We don't need to initialize these right now because they're
@@ -386,8 +484,8 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer,
                                         reparam->params);
 
             // Initialize left buffer to |0>
-            memcpy(buff_left, opt_settings.zero_state,
-                   sizeof(double _Complex) * state_size);
+            for (unsigned int i = 0; i < state_size; ++i)
+              buff_left[i] = opt_settings.zero_state[i];
 
             // Simulate into left buffer
             {
@@ -408,8 +506,8 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer,
                                         reparam->params);
 
             // Initialize right buffer to |0>
-            memcpy(buff_right, opt_settings.zero_state,
-                   sizeof(double _Complex) * state_size);
+            for (unsigned int i = 0; i < state_size; ++i)
+              buff_right[i] = opt_settings.zero_state[i];
 
             // Simulate into right buffer
             {
@@ -517,29 +615,8 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer,
 
       // Optionally calculate and report energy
       if (energy_callback != NULL) {
-        double _Complex energy = 0;
-        double _Complex current_phi_state[state_size];
-        memcpy(current_phi_state, opt_settings.zero_state,
-               sizeof(double _Complex) * (unsigned long int)state_size);
-        circuit_run(circuit, &current_phi_state);
-
-        for (unsigned int i = 0; i < opt_settings.hamiltonian.size; ++i) {
-          Vector *row = (Vector *)opt_settings.hamiltonian.data + i;
-          for (unsigned int u = 0; u < row->size; ++u) {
-            OptimizerDCPackedRowElem elem =
-                *((OptimizerDCPackedRowElem *)row->data + u);
-            unsigned int j = elem.j;
-            double _Complex value = elem.value;
-            if (i == j)
-              energy +=
-                  conj(current_phi_state[i]) * value * current_phi_state[j];
-            else
-              energy +=
-                  2 * conj(current_phi_state[i]) * value * current_phi_state[j];
-          }
-        }
-
-        energy_callback(energy, callback_context);
+        report_energy(state_size, &opt_settings, circuit, energy_callback,
+                      callback_context);
       }
     }
   }
@@ -560,5 +637,678 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer,
     result.quit_on_max_iter = false;
   result.valid = true;
   result.content.data = circuit;
+  return result;
+}
+
+// Helper function for the optimization routines.
+// Calculates the gradient over the parameters of the circuit w.r.t. the
+// expectation value of the hamiltonian over the in-output of |0> This function
+// is not used in the ADADELTA routine (which contains almost a copy of the
+// code), because that version performs ADADELTA specific operations while
+// calculating the gradient.
+static Result calculate_gradient(double (*gradient)[],
+                                 unsigned int abs_param_count,
+                                 OptimizerSettings *opt_settings,
+                                 unsigned int state_size, Circuit *circuit) {
+  // Buffers for state at left and right of the parameters
+  // This is needed to approximate the gradient
+  double _Complex buff_left[state_size];
+  double _Complex buff_right[state_size];
+
+  unsigned int flat_param_index = 0;
+  // For each gate reparameterization...
+  Iter param_iter = iter_create_contiguous_memory(opt_settings->reparams,
+                                                  sizeof(GateParameterization),
+                                                  opt_settings->reparams_count);
+  Option next;
+  while ((next = iter_next(&param_iter)).some) {
+    // For parameter in gate parameterizations...
+    GateParameterization *param = (GateParameterization *)(next.data);
+    Iter subparam_iter = iter_create_contiguous_memory(
+        param->params, sizeof(double), param->param_count);
+    Iter deltas_iter = iter_create_contiguous_memory(
+        param->deltas, sizeof(double), param->param_count);
+    // For each parameter in that gate parameterization...
+    while ((next = iter_next(&subparam_iter)).some) {
+      double *subparam = (double *)(next.data);
+      double delta = *(double *)(iter_next(&deltas_iter).data);
+
+      // Left shift
+      {
+        *subparam -= delta;
+        param->gate->reparamFn(&param->gate->matrix, param->params);
+
+        // Initialize left buffer to |0>
+        for (unsigned int i = 0; i < state_size; ++i)
+          buff_left[i] = opt_settings->zero_state[i];
+
+        // Simulate into left buffer
+        {
+          Result run_r = circuit_run(circuit, &buff_left);
+          if (!run_r.valid) {
+            iter_free(&subparam_iter);
+            iter_free(&deltas_iter);
+            iter_free(&param_iter);
+            return run_r;
+          }
+        }
+
+        // Undo shift
+        *subparam += delta;
+      }
+
+      // Right shift
+      {
+        *subparam += delta;
+        param->gate->reparamFn(&param->gate->matrix, param->params);
+
+        // Initialize right buffer to |0>
+        for (unsigned int i = 0; i < state_size; ++i)
+          buff_right[i] = opt_settings->zero_state[i];
+
+        // Simulate into right buffer
+        {
+          Result run_r = circuit_run(circuit, &buff_right);
+          if (!run_r.valid) {
+            iter_free(&subparam_iter);
+            iter_free(&deltas_iter);
+            iter_free(&param_iter);
+            return run_r;
+          }
+        }
+
+        // Undo right shift; reparameterize
+        *subparam -= delta;
+        param->gate->reparamFn(&param->gate->matrix, param->params);
+      }
+
+      // Calculate this parameter's gradient component via the method
+      //  presented above.
+      double grad_component = 0;
+      {
+        for (unsigned int u = 0; u < state_size; ++u) {
+          Vector *row = ((Vector *)opt_settings->hamiltonian.data) + u;
+          double _Complex left_u = buff_left[u];
+          double _Complex right_u = buff_right[u];
+
+          for (unsigned int i = 0; i < row->size; ++i) {
+            OptimizerDCPackedRowElem elem =
+                *((OptimizerDCPackedRowElem *)(row->data) + i);
+            unsigned int k = elem.j;
+            double _Complex left_k = buff_left[k];
+            double _Complex right_k = buff_right[k];
+            double _Complex ham_uk = elem.value;
+
+            if (u == k) {
+              grad_component +=
+                  creal(ham_uk * (right_u + left_u) * conj(right_u - left_u)) /
+                  2.;
+            } else {
+              grad_component += creal(
+                  ham_uk * (conj(right_u) * right_k - conj(left_u) * left_k));
+            }
+          }
+        }
+
+        grad_component /= delta;
+        (*gradient)[flat_param_index] = grad_component;
+      }
+
+      // Keep track of the "flattened" index of the subparameters.
+      flat_param_index++;
+    }
+    iter_free(&subparam_iter);
+    iter_free(&deltas_iter);
+  }
+  iter_free(&param_iter);
+
+  return result_get_empty_valid();
+}
+
+// Optimize a circuit's parameters w.r.t. the expectation value of the
+// Hamiltonian using a Low-Memory Broyden-Fletcher-Goldfarb-Shanno algorithm
+OptimizationResult optimizer_optimize_lbfgs(
+    Optimizer *optimizer, OptimizerParamCallback param_callback,
+    OptimizerEnergyCallback energy_callback, void *callback_context) {
+  // Aliases for commonly used values
+  const LbfgsSettings lbfgs_settings =
+      optimizer->algo_settings.specific.lbfgs_settings;
+  OptimizerSettings opt_settings = optimizer->opt_settings;
+  Circuit *circuit = opt_settings.circuit;
+  const unsigned int state_size = 1U << circuit->depth[0];
+
+  // Check validity of optimizer
+  if (optimizer == NULL) {
+    Result invalid_result = result_get_invalid_reason("optimizer is null");
+    return result_as_optimization_result(invalid_result);
+  }
+
+  // Count the number of parameters
+  unsigned int abs_param_count = 0;
+  {
+    unsigned int reparams_count = opt_settings.reparams_count;
+    for (unsigned int reparam_index = 0; reparam_index < reparams_count;
+         ++reparam_index) {
+      abs_param_count += opt_settings.reparams[reparam_index].param_count;
+    }
+  }
+
+  // Iteration count; this will only be useful if there is a max
+  // iteration count allowed
+  unsigned long int iter_count = 0;
+
+  // 2-norm of the local gradient
+  // Used to break out of the optimization based on `stop_at`
+  double grad_two_norm = opt_settings.stop_at + 1;
+
+  // Buffers for state at left and right of the parameters
+  // This is needed to approximate the gradient
+  double _Complex buff_left[abs_param_count];
+  double _Complex buff_right[abs_param_count];
+
+  // Gradient over the parameters, w.r.t. the expectation value of the
+  //  Hamiltonian over the output
+  double gradient[abs_param_count];
+
+  // LBFGS "memory" variables
+  Dequeue step_memory;
+  Dequeue grad_delta_memory;
+  {
+    // Initialize `step_memory`
+    Result init_r;
+    init_r = dequeue_init(&step_memory, sizeof(double) * abs_param_count);
+    if (!init_r.valid) return result_as_optimization_result(init_r);
+
+    // Initialize `grad_delta_memory`
+    init_r = dequeue_init(&grad_delta_memory, sizeof(double) * abs_param_count);
+    if (!init_r.valid) {
+      dequeue_free(&step_memory);
+      return result_as_optimization_result(init_r);
+    }
+  }
+
+  // An array to store the gradient of the last step; this is necessary to
+  // compute the gradient delta
+  double last_gradient[abs_param_count];
+  for (unsigned int i = 0; i < abs_param_count; ++i) last_gradient[i] = 0.;
+
+  // Optimization cycle:
+  while (grad_two_norm > opt_settings.stop_at) {
+    // If there's a maximum number of iterations, keep track of the
+    // current iteration (and break as appropriate)
+    if (opt_settings.max_iterations.some) {
+      iter_count++;
+      if (iter_count >= opt_settings.max_iterations.data) break;
+    }
+
+    // Calculate gradient into `gradient`
+    {
+      Result grad_r = calculate_gradient(&gradient, abs_param_count,
+                                         &opt_settings, state_size, circuit);
+      if (!grad_r.valid) {
+        dequeue_free(&step_memory);
+        dequeue_free(&grad_delta_memory);
+        return result_as_optimization_result(grad_r);
+      }
+    }
+
+    // Calculate the gradient delta
+    // We need to do this now because `gradient` will be overwritten as a
+    // consequence of the "recursion" over q
+    // Also calculate two norm!
+    grad_two_norm = 0;
+    double grad_delta[abs_param_count];
+    double grad_delta_two_norm = 0;
+    for (unsigned int i = 0; i < abs_param_count; ++i) {
+      grad_delta[i] = gradient[i] - last_gradient[i];
+      grad_two_norm += pow(gradient[i], 2);
+      grad_delta_two_norm += grad_delta[i] * grad_delta[i];
+      last_gradient[i] = gradient[i];
+    }
+
+    // Compute H_k Grad(f)_K
+    // via two loop recursion if there is history
+    // (i.e. calculate direction of descent)
+    // ***This will overwrite the gradient!***
+    // However, the gradient is still stored in `last_gradient`
+    // for the rest of the iteration.
+    // If there is no history for two loop recursion, perform
+    // simple gradient descent
+    if (grad_delta_memory.size == lbfgs_settings.m) {
+      double
+          rho_cache[grad_delta_memory.size];  // Cache `rho`s on the first loop
+      double alpha_cache[grad_delta_memory.size];  // Cache `alpha`s on the
+                                                   // first loop
+
+      // First loop
+      {
+        Iter grad_delta_iter = dequeue_into_iterator_ftb(&grad_delta_memory);
+        Iter step_delta_iter = dequeue_into_iterator_ftb(&step_memory);
+
+        // Not the same as the index of the iteration! (i.e. "position" of the
+        // iterators) Note that because one loop is b.t.f. and the other is
+        // f.t.b., the caching/access must account for this.
+        // The first loop is f.t.b.
+        unsigned int iter_index = grad_delta_memory.size - 1;
+
+        Option next;
+        while ((next = iter_next(&grad_delta_iter)).some) {
+          double *grad_delta_i = (double *)next.data;
+
+          next = iter_next(&step_delta_iter);
+          if (!next.some) {
+            dequeue_free(&step_memory);
+            dequeue_free(&grad_delta_memory);
+            return result_as_optimization_result(result_get_invalid_reason(
+                "size mismatch between memory dequeues"));
+          }
+          double *step_i = (double *)next.data;
+
+          // We now have s_i, y_i
+          // (respectively `step_i`, `grad_delta_i`)
+
+          // Calculate rho
+          double rho;
+          {
+            rho = 0;
+            for (unsigned int i = 0; i < abs_param_count; ++i) {
+              rho += grad_delta_i[i] * step_i[i];
+            }
+            rho = 1. / rho;
+          }
+
+          rho_cache[iter_index] = rho;
+
+          // Calculate alpha
+          double alpha;
+          {
+            alpha = 0;
+            for (unsigned int i = 0; i < abs_param_count; ++i) {
+              alpha += step_i[i] * gradient[i];
+            }
+            alpha = rho * alpha;
+          }
+
+          alpha_cache[iter_index] = alpha;
+
+          // Update `q` (which is the gradient array, here)
+          for (unsigned int i = 0; i < abs_param_count; ++i) {
+            gradient[i] -= alpha * grad_delta_i[i];
+          }
+
+          iter_index--;
+        }  // Finished iterating over `grad_delta_memory`
+
+        iter_free(&grad_delta_iter);
+        iter_free(&step_delta_iter);
+      }  // Finished first loop of two loop recursion
+
+      // Compute H⁰k
+      // We use the approximation suggested by Nocedal (2006), p. 178
+      // that H = \gamma I (eq. 7.20)
+      // and so store only gamma
+      double gamma;
+      {
+        // Calculate gamma
+        // Safely peek the most recent gradient delta in memory
+        double *last_grad_delta;
+        {
+          Result peek_r = dequeue_peek_from_front(&grad_delta_memory, 0);
+          if (!peek_r.valid) {
+            dequeue_free(&step_memory);
+            dequeue_free(&grad_delta_memory);
+            return result_as_optimization_result(peek_r);
+          }
+          last_grad_delta = (double *)peek_r.content.data;
+        }
+
+        if (step_memory.size != grad_delta_memory.size) {
+          dequeue_free(&step_memory);
+          dequeue_free(&grad_delta_memory);
+          return result_as_optimization_result(result_get_invalid_reason(
+              "size mismatch between memory dequeues"));
+        }
+
+        // Safely peek the most recent update delta in memory
+        double *last_step;
+        {
+          Result peek_r = dequeue_peek_from_front(&step_memory, 0);
+          if (!peek_r.valid) {
+            dequeue_free(&step_memory);
+            dequeue_free(&grad_delta_memory);
+            return result_as_optimization_result(peek_r);
+          }
+          last_step = (double *)peek_r.content.data;
+        }
+
+        // Calculate the numerator and denominator sum in gamma
+        double numerator = 0;
+        double denominator = 0;
+        for (unsigned int i = 0; i < abs_param_count; ++i) {
+          numerator += last_grad_delta[i] * last_step[i];
+          denominator += last_grad_delta[i] * last_grad_delta[i];
+        }
+
+        // Finally, calculate gamma
+        gamma = numerator / denominator;
+      }
+
+      // r <- H^0_k q
+      // Take into account that we are taking H_0^k ~ gamma_k I
+      for (unsigned int i = 0; i < abs_param_count; ++i) {
+        gradient[i] *= gamma;
+      }
+
+      // Second loop
+      {
+        // Note that the iteration is now back to front
+        Iter grad_delta_iter = dequeue_into_iterator_btf(&grad_delta_memory);
+        Iter step_delta_iter = dequeue_into_iterator_btf(&step_memory);
+        unsigned int iter_index = 0;
+
+        Option next;
+        while ((next = iter_next(&grad_delta_iter)).some) {
+          double *grad_delta_i = (double *)next.data;
+
+          next = iter_next(&step_delta_iter);
+          if (!next.some) {
+            dequeue_free(&step_memory);
+            dequeue_free(&grad_delta_memory);
+            return result_as_optimization_result(
+                result_get_invalid_reason("size mismatch between dequeues"));
+          }
+          double *step_i = (double *)next.data;
+
+          // We now have s_i, y_i
+          // (respectively `step_i`, `grad_delta_i`)
+
+          // Calculate beta
+          double beta;
+          {
+            beta = 0;
+            for (unsigned int i = 0; i < abs_param_count; ++i) {
+              beta += grad_delta_i[i] * gradient[i];
+            }
+            beta *= rho_cache[iter_index];
+          }
+
+          // Update r
+          for (unsigned int i = 0; i < abs_param_count; ++i) {
+            gradient[i] += step_i[i] * (alpha_cache[iter_index] - beta);
+          }
+
+          iter_index++;
+        }
+
+        iter_free(&grad_delta_iter);
+        iter_free(&step_delta_iter);
+      }  // Finished second loop of two loop recursion
+    }    // endif history
+
+    // `gradient` now holds H_k grad(f)_k
+    // i.e. `-alpha*gradient` is the direction of descent
+    // We will transform the components of gradient as we
+    // reparameterize
+
+    // Step all variables, perform the reparameterizations
+    {
+      unsigned int flat_param_index = 0;
+      // For each gate reparameterization...
+      Iter param_iter = iter_create_contiguous_memory(
+          opt_settings.reparams, sizeof(GateParameterization),
+          opt_settings.reparams_count);
+      Option next;
+      while ((next = iter_next(&param_iter)).some) {
+        GateParameterization *param = (GateParameterization *)(next.data);
+        Iter subparam_iter = iter_create_contiguous_memory(
+            param->params, sizeof(double), param->param_count);
+        Iter deltas_iter = iter_create_contiguous_memory(
+            param->deltas, sizeof(double), param->param_count);
+        // For each parameter in that gate parameterization...
+        while ((next = iter_next(&subparam_iter)).some) {
+          double *subparam = (double *)(next.data);
+
+          double step = -lbfgs_settings.alpha * gradient[flat_param_index];
+          *subparam += step;
+
+          // Optionally report new parameter
+          if (param_callback != NULL)
+            param_callback(flat_param_index, *subparam, callback_context);
+
+          // Set gradient array to be the step
+          gradient[flat_param_index] = step;
+
+          flat_param_index++;
+        }
+
+        iter_free(&subparam_iter);
+        iter_free(&deltas_iter);
+      }
+      iter_free(&param_iter);
+    }
+
+    // Report energy if needed
+    if (energy_callback != NULL) {
+      report_energy(state_size, &opt_settings, circuit, energy_callback,
+                    callback_context);
+    }
+
+
+    // From Byrd et al.; maintain the positive definiteness of the matrix
+    double sy = 0;
+    for (unsigned int i = 0; i < abs_param_count; ++i) sy += last_gradient[i]*gradient[i];
+    if (sy > lbfgs_settings.epsilon * grad_delta_two_norm) {
+      // Condition satisfied; push to queue
+      
+      // If the dequeues are full, pop an item
+      if (step_memory.size == lbfgs_settings.m) {
+        Result pop_r = dequeue_pop_back(&step_memory, NULL);
+        if (!pop_r.valid) {
+          dequeue_free(&step_memory);
+          dequeue_free(&grad_delta_memory);
+          return result_as_optimization_result(pop_r);
+        }
+      }
+
+      // Push the step to the memory; it's just `gradient`!
+      // (Because we reversed and multiplied by alpha before)
+      {
+        Result push_r = dequeue_push_front(&step_memory, (void *)gradient);
+        if (!push_r.valid) {
+          dequeue_free(&step_memory);
+          dequeue_free(&grad_delta_memory);
+          return result_as_optimization_result(push_r);
+        }
+      }
+
+      if (grad_delta_memory.size == lbfgs_settings.m) {
+        Result pop_r = dequeue_pop_back(&grad_delta_memory, NULL);
+        if (!pop_r.valid) {
+          dequeue_free(&step_memory);
+          dequeue_free(&grad_delta_memory);
+          return result_as_optimization_result(pop_r);
+        }
+      }
+
+      // Push the gradient delta to the memory
+      {
+        Result push_r =
+            dequeue_push_front(&grad_delta_memory, (void *)grad_delta);
+        if (!push_r.valid) {
+          dequeue_free(&step_memory);
+          dequeue_free(&grad_delta_memory);
+          return result_as_optimization_result(push_r);
+        }
+    }  // done pushing grad delta
+    } // done pushing to memory
+  }    // Done with optimize
+
+  // Reparameterize all gates so that they match
+  // last calculated parameters
+  for (unsigned int reparam_index = 0;
+       reparam_index < opt_settings.reparams_count; ++reparam_index) {
+    GateParameterization *param = opt_settings.reparams + reparam_index;
+    param->gate->reparamFn(&param->gate->matrix, param->params);
+  }
+
+  // Free local variables
+  dequeue_free(&step_memory);
+  dequeue_free(&grad_delta_memory);
+
+  // Done!
+  OptimizationResult result;
+  if (opt_settings.max_iterations.some &&
+      iter_count >= opt_settings.max_iterations.data)
+    result.quit_on_max_iter = true;
+  else
+    result.quit_on_max_iter = false;
+  result.valid = true;
+  result.content.data = circuit;
+  return result;
+}
+
+// TODO
+OptimizationResult optimizer_optimize_adam(
+    Optimizer *optimizer, OptimizerParamCallback param_callback,
+    OptimizerEnergyCallback energy_callback, void *callback_context) {
+  // Aliases for commonly used values
+  const AdamSettings adam_settings =
+      optimizer->algo_settings.specific.adam_settings;
+  OptimizerSettings opt_settings = optimizer->opt_settings;
+  Circuit *circuit = opt_settings.circuit;
+  const unsigned int state_size = 1U << circuit->depth[0];
+
+  // Check validity of optimizer
+  if (optimizer == NULL) {
+    Result invalid_result = result_get_invalid_reason("optimizer is null");
+    return result_as_optimization_result(invalid_result);
+  }
+
+  // Count the number of parameters
+  unsigned int abs_param_count = 0;
+  {
+    unsigned int reparams_count = opt_settings.reparams_count;
+    for (unsigned int reparam_index = 0; reparam_index < reparams_count;
+         ++reparam_index) {
+      abs_param_count += opt_settings.reparams[reparam_index].param_count;
+    }
+  }
+
+  // Iteration count; this will only be useful if there is a max
+  // iteration count allowed
+  unsigned long int iter_count = 0;
+
+  // 2-norm of the step
+  // Used to break out of the optimization based on `stop_at`
+  double step_two_norm = opt_settings.stop_at + 1;
+
+  // Momentum vectors
+  double moment_one[abs_param_count];
+  double moment_two[abs_param_count];
+  for (unsigned int i = 0; i < abs_param_count; ++i) {
+    moment_one[i] = 0.;
+    moment_two[i] = 0.;
+  }
+
+  // Optimization cycle:
+  while (step_two_norm > opt_settings.stop_at) {
+    // If there's a maximum number of iterations, break as appropriate
+    // Keep count of the iterations anyway, as they're needed in ADAM
+    iter_count++;
+    if (opt_settings.max_iterations.some) {
+      if (iter_count >= opt_settings.max_iterations.data) break;
+    }
+
+    // Gradient over the parameters, w.r.t. the expectation value of the
+    //  Hamiltonian over the output
+    double gradient[abs_param_count];
+    {
+      Result grad_r = calculate_gradient(&gradient, abs_param_count,
+                                         &opt_settings, state_size, circuit);
+      if (!grad_r.valid) {
+        return result_as_optimization_result(grad_r);
+      }
+    }
+
+    // Reset the step two norm; this will be calculated later
+    step_two_norm = 0;
+
+    // Do the following component-wise
+    {
+      unsigned int flat_index = 0;
+      Iter param_iter = iter_create_contiguous_memory(
+          opt_settings.reparams, sizeof(GateParameterization),
+          opt_settings.reparams_count);
+      Option next;
+      while ((next = iter_next(&param_iter)).some) {
+        GateParameterization *param = (GateParameterization *)(next.data);
+        Iter subparam_iter = iter_create_contiguous_memory(
+            param->params, sizeof(double), param->param_count);
+        // For each parameter in that gate parameterization...
+        while ((next = iter_next(&subparam_iter)).some) {
+          double *subparam = (double *)(next.data);
+          // Update first moment
+          moment_one[flat_index] =
+              adam_settings.beta_one * moment_one[flat_index] +
+              (1. - adam_settings.beta_one) * gradient[flat_index];
+
+          // Update second moment
+          moment_two[flat_index] =
+              adam_settings.beta_two * moment_two[flat_index] +
+              (1. - adam_settings.beta_two) * pow(gradient[flat_index], 2);
+
+          // Calculate the hat moments
+          double hat_one =
+              moment_one[flat_index] /
+              (1. - pow(adam_settings.beta_one, (double)iter_count));
+          double hat_two =
+              moment_two[flat_index] /
+              (1. - pow(adam_settings.beta_two, (double)iter_count));
+
+          // Step
+          double step = -adam_settings.alpha * hat_one /
+                        (sqrt(hat_two) + adam_settings.epsilon);
+
+          // Update the variable
+          *subparam += step;
+
+          // Optionally report new parameter
+          if (param_callback != NULL)
+            param_callback(flat_index, *subparam, callback_context);
+
+          // Calculate the two norm (this component)
+          step_two_norm += pow(step, 2);
+
+          flat_index++;
+        }  // Done with subparam
+        iter_free(&subparam_iter);
+      }  // Done with param
+      iter_free(&param_iter);
+    }
+
+    // Report energy if needed
+    if (energy_callback != NULL) {
+      report_energy(state_size, &opt_settings, circuit, energy_callback,
+                    callback_context);
+    }
+  }  // Done with optimize
+
+  // Reparameterize all gates so that they match
+  // last calculated parameters
+  for (unsigned int reparam_index = 0;
+       reparam_index < opt_settings.reparams_count; ++reparam_index) {
+    GateParameterization *param = opt_settings.reparams + reparam_index;
+    param->gate->reparamFn(&param->gate->matrix, param->params);
+  }
+
+  // Done!
+  OptimizationResult result;
+  if (opt_settings.max_iterations.some &&
+      iter_count >= opt_settings.max_iterations.data)
+    result.quit_on_max_iter = true;
+  else
+    result.quit_on_max_iter = false;
+  result.valid = true;
+  result.content.data = (void *)circuit;
   return result;
 }

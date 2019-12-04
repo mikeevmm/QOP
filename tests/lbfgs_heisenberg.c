@@ -296,9 +296,15 @@ int main(void) {
       reparams.data, reparams.size, option_from_uint(4000)));
   OptimizerAlgoSettings algo_settings;
   {
+    LbfgsSettings lbfgs_settings = optimizer_lbfgs_get_default();
+    optimizer_algo_settings_init(&algo_settings, AlgoLbfgs,
+                                 (void *)(&lbfgs_settings));
+    lbfgs_settings.alpha = .1;
+    /*
     AdadeltaSettings ada_settings = optimizer_adadelta_get_default();
     optimizer_algo_settings_init(&algo_settings, AlgoAdadelta,
                                  (void *)(&ada_settings));
+    */
   }
   Optimizer opt;
   result_unwrap(optimizer_init(&opt, opt_settings, algo_settings));

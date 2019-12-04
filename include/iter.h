@@ -11,20 +11,14 @@
 
 // Represents an iteration over an iterable memory region.
 typedef struct Iter {
-  void *head;
-  unsigned int stride;
-  unsigned int length;
   unsigned int position;
+  void *context;  // A pointer to an object which is contextually relevant
+  int context_values[4];  // values of arbitrary "storage"
+  // (Iter *, position)
+  Option (*next_fn)(struct Iter *, unsigned int);
+  // (Iter *)
+  void (*free_fn)(struct Iter *);
 } Iter;
-
-// Creates an iterator object over a specified memory region.
-// This memory region is defined by the `head` (the starting position in
-// memory), the byte `stride` (usually the `sizeof` the object of the
-// collection we're iterating over), and the `length`, such that the
-// iterator will always return a none `Option` after `length` iterations.
-// Note that, in order to be as flexible as possible, the iterator
-// operates on `void *` pointers.
-Iter iter_create(void *head, unsigned int stride, unsigned int length);
 
 // Moves the iterator object `iter` one iteration forward, returning a
 // pointer to the object at the new iterator position.
@@ -35,10 +29,20 @@ Iter iter_create(void *head, unsigned int stride, unsigned int length);
 // the iteration data.
 Option iter_next(Iter *iter);
 
+// Frees any internal memory that the iterator object may have allocated.
+// Note that the iterator may not have allocated any memory, in which case
+// this function will not do anything and is in principle optimized out of
+// the compiled program.
+void iter_free(Iter *iter);
+
 // Returns an empty (length-zero) iterator.
 // This can be useful if, for example, an iterator is made from an empty
 // `Vector` (see `Vector.h`).
-Iter iter_get_empty();
+Iter iter_get_empty(void);
+
+// Returns an iterator over a contiguous region in memory.
+Iter iter_create_contiguous_memory(void *head, unsigned int stride,
+                                   unsigned int size);
 
 // Filter function pointer signature. Of signature
 //    `<pointer to> ((void *)<iteration element pointer>) -> <include?>`
@@ -57,7 +61,7 @@ typedef struct Filter {
 // the original iterator (such as iterating over it) has no effect on
 // the filter.
 // This is not true of `filter_fn`, as it is merely a pointer to a
-// filtering function. 
+// filtering function.
 Filter filter_create(Iter iter, FilterFn filter_fn);
 
 // Iterate the given filter's associated iterator until either
@@ -71,4 +75,4 @@ Filter filter_create(Iter iter, FilterFn filter_fn);
 // yielded.
 Option filter_next(Filter *filter);
 
-#endif // QOP_ITER_H_
+#endif  // QOP_ITER_H_

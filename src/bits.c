@@ -17,6 +17,18 @@ unsigned int right_propagate(unsigned int value) {
 
 unsigned int isolate_rightmost(unsigned int value) { return value & (-value); }
 
+unsigned int round_to_next_pow2(unsigned int value) {
+  assert(sizeof(int) == 4);
+  value--;
+  value |= value >> 1;
+  value |= value >> 2;
+  value |= value >> 4;
+  value |= value >> 8;
+  value |= value >> 16;
+  value++;
+  return value;
+}
+
 unsigned int ith_under_mask(unsigned int i, unsigned int mask) {
   // Run through the bits of the mask; add offsets as appropriate
   unsigned int value = 0;

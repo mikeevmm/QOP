@@ -14,7 +14,7 @@ TEST_SRC = $(wildcard $(TEST_DIR)/*.c)
 CPPFLAGS += -Iinclude/.. 
 CDBGFLAGS = -g -O0
 CRLSFLAGS = -O3
-CFLAGS += -Wall -Wextra -Wconversion -Wno-unused -pedantic
+CFLAGS += -Wall -Wextra -Wconversion -Wno-unused -pedantic -Wmissing-prototypes -Wstrict-prototypes
 LDFLAGS += -Llib
 LDLIBS += -lm
 
@@ -53,16 +53,14 @@ check:
 	valgrind --leak-check=full ./$(EXE)
 
 $(TEST_SRC): $(TEST_DIR)/%.c: $(filter-out $(OBJ_DIR)/main.o, $(OBJ))
-	$(CC) $(CPPFLAGS) $(CDBGFLAGS) $(CFLAGS) -c $@ -o $(OBJ_DIR)/$*.o
+	$(CC) $(CPPFLAGS) $(CDBGFLAGS) $(CFLAGS) $(OPT) -c $@ -o $(OBJ_DIR)/$*.o
 	$(CC) $(LDFLAGS) $^ $(OBJ_DIR)/$*.o $(LDLIBS) -o $(TEST_DIR)/$*.out
 	$(TEST_DIR)/$*.out
-	rm $(OBJ_DIR)/$*.o
-	rm $(TEST_DIR)/$*.out
 
 py_build: $(SRC_DIR)/*.c $(PYTHON_DIR)/*.c
-	python3 buildext.py build
+	python3 buildext.py build --force
 ifndef no_install
-	python3 buildext.py install $(PYFLAGS)
+	python3 buildext.py install $(PYFLAGS) --force
 endif
 ifndef no_test
 	python3 -q -X faulthandler $(TEST_DIR)/test_ext.py

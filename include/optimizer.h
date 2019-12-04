@@ -16,6 +16,7 @@
 
 #include <complex.h>
 #include "include/circuit.h"
+#include "include/dequeue.h"
 #include "include/gate.h"
 #include "include/option.h"
 #include "include/vector.h"
@@ -33,7 +34,56 @@ typedef struct AdadeltaSettings {
 // of the ADADELTA paper (arXiv:1212.5701), namely
 // `epsilon`   1.0E-6
 // `rho`       0.95
-AdadeltaSettings optimizer_adadelta_get_default();
+AdadeltaSettings optimizer_adadelta_get_default(void);
+
+typedef struct LbfgsSettings {
+  unsigned int m;  // How many past iterations to "remember"
+  double alpha;    // The update factor; should be within Wolfe conditions
+  double epsilon;  // The `eps` factor; used to decide if an update should
+                   // be stored
+} LbfgsSettings;
+
+// Returns a default `LbfgsSettings` struct.
+// The number 3 was chosen based on the remark by Nocedal (2006) that
+// > Practical experience has shown that modest values of m
+// > (between 3 and 20, say) often produce satisfactory results.
+// The alpha of 1 is also based on the remark that
+// > as a result [of the estimation of H] the step length alpha = 1 is
+// accepted in most iterations
+LbfgsSettings optimizer_lbfgs_get_default(void);
+
+typedef struct AdamSettings {
+  double alpha;
+  double beta_one;
+  double beta_two;
+  double epsilon;
+} AdamSettings;
+
+// Returns a default `AdamSettings` struct.
+// The values are those suggested in the caption of algorithm 1, in the
+// original ADAM paper (arXiv:1412.6980).
+AdamSettings optimizer_adam_get_default(void);
+
+typedef enum OptimizerAlgorithm {
+  AlgoAdadelta,
+  AlgoLbfgs,
+  AlgoAdam,
+} OptimizerAlgorithm;
+
+typedef struct OptimizerAlgoSettings {
+  OptimizerAlgorithm algorithm;
+  union {
+    AdadeltaSettings ada_settings;
+    LbfgsSettings lbfgs_settings;
+    AdamSettings adam_settings;
+  } specific;
+} OptimizerAlgoSettings;
+
+// TODO:
+// This copies the specific settings!
+Result optimizer_algo_settings_init(OptimizerAlgoSettings *algo_settings,
+                                    OptimizerAlgorithm algorithm,
+                                    void *specific_settings);
 
 // Description of a parameterized gate to be optmimized with an
 // `Optimizer`.
@@ -120,17 +170,18 @@ Result optimizer_settings_init(OptimizerSettings *opt_settings,
 void optimizer_settings_free(OptimizerSettings *opt_settings);
 
 // The optimizer object responsible to perform the optimization itself.
-// It is just a glorified pair of `OptimizerSettings` and `AdadeltaSettings`.
+// It is just a glorified pair of `OptimizerSettings` and some algorithm
+// settings struct.
 typedef struct Optimizer {
   OptimizerSettings opt_settings;
-  AdadeltaSettings ada_settings;
+  OptimizerAlgoSettings algo_settings;
 } Optimizer;
 
 // Initializes an `Optimizer` object.
 // There are no internal memory allocation concerns with the `Optimizer`
 // object.
 Result optimizer_init(Optimizer *optimizer, OptimizerSettings opt_settings,
-                      AdadeltaSettings ada_settings);
+                      OptimizerAlgoSettings algo_settings);
 
 // Information about the results of an optimization.
 // The structure is that of a simple `Result`, with extra fields specific
@@ -170,5 +221,21 @@ OptimizationResult optimizer_optimize(Optimizer *optimizer,
                                       OptimizerParamCallback param_callback,
                                       OptimizerEnergyCallback energy_callback,
                                       void *callback_context);
+
+// Perform an optimization using ADADELTA
+// TODO: Comment
+OptimizationResult optimizer_optimize_adadelta(
+    Optimizer *optimizer, OptimizerParamCallback param_callback,
+    OptimizerEnergyCallback energy_callback, void *callback_context);
+
+// TODO: Comment
+OptimizationResult optimizer_optimize_lbfgs(
+    Optimizer *optimizer, OptimizerParamCallback param_callback,
+    OptimizerEnergyCallback energy_callback, void *callback_context);
+
+// TODO: Comment
+OptimizationResult optimizer_optimize_adam(
+    Optimizer *optimizer, OptimizerParamCallback param_callback,
+    OptimizerEnergyCallback energy_callback, void *callback_context);
 
 #endif  // QOP_OPTIMIZER_H_

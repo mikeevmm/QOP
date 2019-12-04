@@ -1,31 +1,44 @@
 #include "include/iter.h"
 
-Iter iter_create(void *head, unsigned int stride, unsigned int length) {
-  Iter new_iter;
-  new_iter.head = head;
-  new_iter.position = 0;
-  new_iter.stride = stride;
-  new_iter.length = length;
-  return new_iter;
+Option iter_next(Iter *iter) {
+  Option next = iter->next_fn(iter, iter->position);
+  iter->position += 1;
+  return next;
 }
 
-Option iter_next(Iter *iter) {
-  if (iter->position == iter->length) {
-    return option_none();
-  }
+void iter_free(Iter *iter) {
+  if (iter->free_fn != NULL) iter->free_fn(iter);
+}
 
-  void *next = (char *)iter->head + iter->stride * iter->position;
-  iter->position += 1;
-  return option_some_with_data(next);
+static Option iter_empty_next_fn(Iter *iter, unsigned int pos) {
+  return option_none();
 }
 
 Iter iter_get_empty() {
   Iter empty_iter;
-  empty_iter.head = NULL;
-  empty_iter.length = 0;
   empty_iter.position = 0;
-  empty_iter.stride = 0;
+  empty_iter.next_fn = &iter_empty_next_fn;
+  empty_iter.free_fn = NULL;
   return empty_iter;
+}
+
+static Option iter_contiguous_memory_next_fn(Iter *iter, unsigned int pos) {
+  unsigned int size = (unsigned int)iter->context_values[1];
+  if (pos >= size) return option_none();
+  unsigned int stride = (unsigned int)iter->context_values[0];
+  return option_some_with_data((void *)((char *)iter->context + stride * pos));
+}
+
+Iter iter_create_contiguous_memory(void *head, unsigned int stride,
+                                   unsigned int size) {
+  Iter iter;
+  iter.position = 0;
+  iter.context = head;
+  iter.context_values[0] = (int)stride;
+  iter.context_values[1] = (int)size;
+  iter.next_fn = &iter_contiguous_memory_next_fn;
+  iter.free_fn = NULL;
+  return iter;
 }
 
 Filter filter_create(Iter iter, FilterFn filter_fn) {

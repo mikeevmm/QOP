@@ -116,11 +116,12 @@ Result circuit_compact(Circuit *circuit) {
 
   // Number of gates in each slice
   unsigned int slice_gate_count[circuit->depth[1]];
-  memset(slice_gate_count, 0, sizeof(unsigned int) * circuit->depth[1]);
+  for (unsigned int i = 0; i < (circuit->depth[1]); ++i)
+    slice_gate_count[i] = 0;
 
   // Current leftmost position available
   unsigned int leftmost[circuit->depth[0]];
-  memset(leftmost, 0, sizeof(unsigned int) * circuit->depth[0]);
+  for (unsigned int i = 0; i < (circuit->depth[0]); ++i) leftmost[i] = 0;
 
   // Run over the `SoftGate`s and find the compacted position.
   // Update leftmost available positions accordingly.
@@ -151,6 +152,7 @@ Result circuit_compact(Circuit *circuit) {
       soft_gate->position.slice = new_position;
       slice_gate_count[new_position] += 1;
     }
+    iter_free(&soft_gates_iter);
   }
 
   // Update depth
@@ -200,6 +202,7 @@ Result circuit_harden(Circuit *circuit) {
       vector_free(&next_info->slice_sg_ptrs);
     }
     vector_free(&circuit->slice_info_vec);
+    iter_free(&info_iter);
   }
 
   // Allocate appropriate size...
@@ -207,7 +210,7 @@ Result circuit_harden(Circuit *circuit) {
   //  BTree map
   SoftGate **hardened_gates;
   {
-    size_t malloc_size =
+    unsigned long malloc_size =
         circuit->depth[0] * circuit->depth[1] * sizeof(SoftGate *);
     void *new_malloc = malloc(malloc_size);
     if (new_malloc == NULL) {
@@ -232,6 +235,7 @@ Result circuit_harden(Circuit *circuit) {
       }
       *(ptr_pos) = soft_gate;
     }
+    iter_free(&gates_iter);
   }
 
   // Figure out what bits are relevant (gate-affected and controls)
@@ -255,9 +259,9 @@ Result circuit_harden(Circuit *circuit) {
     {
       unsigned long int head_offset =
           slice_index * circuit->depth[0] * sizeof(SoftGate *);
-      Iter slice_gates_iter =
-          iter_create((void *)((char *)hardened_gates + head_offset),
-                      sizeof(SoftGate *), circuit->depth[0]);
+      Iter slice_gates_iter = iter_create_contiguous_memory(
+          (void *)((char *)hardened_gates + head_offset), sizeof(SoftGate *),
+          circuit->depth[0]);
       Filter slice_gates_filter =
           filter_create(slice_gates_iter, _circuit_filter_is_soft_gate);
       filter_into_vector(&slice_gates_filter, &slice_gates);
@@ -288,6 +292,7 @@ Result circuit_harden(Circuit *circuit) {
           ctrl_gate_mask |= ctrl_bit;
         }
       }
+      iter_free(&gate_iter);
     }
 
     // Create the slice info object
@@ -310,6 +315,7 @@ Result circuit_harden(Circuit *circuit) {
           CircuitSliceInfo *next_info = (CircuitSliceInfo *)next.data;
           vector_free(&next_info->slice_sg_ptrs);
         }
+        iter_free(&info_iter);
         // Free components
         vector_free(&slice_info.slice_sg_ptrs);
         free(hardened_gates);
@@ -317,6 +323,8 @@ Result circuit_harden(Circuit *circuit) {
       }
     }
   }
+
+  free(hardened_gates);
 
   return result_get_valid_with_data(circuit);
 }
@@ -422,7 +430,7 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
     // Output vector to be written to during computation; its value
     // is transferred to inout after a slice cycle
     double _Complex output[1 << qubits];
-    memset(output, 0, sizeof(double _Complex) * (1 << qubits));
+    for (unsigned int i = 0; i < (1U << qubits); ++i) output[i] = 0.;
 
     // Grab info about this slice
     CircuitSliceInfo slice_info =
@@ -457,6 +465,7 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
             else
               coef *= (double)(1U ^ out_bit ^ in_bit);
           }
+          iter_free(&gates);
         }
 
         // (Bit flip) Permutations of the irrelevant parts of in to be
@@ -483,9 +492,7 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
       }
     }
 
-    void *copy =
-        memcpy(*inout, output, sizeof(double _Complex) * (1UL << qubits));
-    if (copy == NULL) return result_get_invalid_reason("memcpy failed");
+    for (unsigned int i = 0; i < (1U << qubits); ++i) (*inout)[i] = output[i];
   }
 
   return result_get_valid_with_data(inout);
@@ -506,6 +513,7 @@ Result circuit_free(Circuit *circuit) {
       CircuitSliceInfo *slice_info = (CircuitSliceInfo *)next.data;
       vector_free(&slice_info->slice_sg_ptrs);
     }
+    iter_free(&info_iter);
     vector_free(&circuit->slice_info_vec);
   }
 

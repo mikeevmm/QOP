@@ -30,6 +30,8 @@ typedef struct QopGateObject {
   unsigned int param_count;
 } QopGateObject;
 
+PyMODINIT_FUNC PyInit_qop(void);
+
 static PyObject *qop_create_circuit(PyTypeObject *type, PyObject *args,
                                     PyObject *kwds);
 static void qop_circuit_obj_dealloc(QopCircuitObject *obj);
@@ -42,12 +44,14 @@ static PyObject *qop_circuit_add_gate(QopCircuitObject *self, PyObject *args,
 static bool parse_optimization_settings(
     PyObject *settings, QopCircuitObject *self, double _Complex *hamiltonian,
     Vector *reparams_vec, Vector *reparams_to_obj_pointer,
-    OptimizerSettings *opt_settings, AdadeltaSettings *ada_settings);
+    OptimizerSettings *opt_settings, AdadeltaSettings *ada_settings,
+    LbfgsSettings *lbfgs_settings, AdamSettings *adam_settings);
 static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
                                       PyObject *kwds);
 static PyObject *qop_circuit_get_gates(QopCircuitObject *self);
 static PyObject *qop_circuit_run(QopCircuitObject *self, PyObject *args,
                                  PyObject *kwds);
+static PyObject *qop_circuit_get_parameters(QopCircuitObject *self);
 
 static PyObject *qop_gate_reparameterize(QopGateObject *self, PyObject *args,
                                          PyObject *kwds);
@@ -73,6 +77,9 @@ static PyMethodDef qop_circuit_obj_methods[] = {
      METH_VARARGS | METH_KEYWORDS, "Optimize all given gates"},
     {"run", (PyCFunction)qop_circuit_run, METH_VARARGS | METH_KEYWORDS,
      "Run a state through the circuit."},
+    {"get_parameters", (PyCFunction)qop_circuit_get_parameters, METH_NOARGS,
+     "Returns a list of all the parameters of every parameterized gate in the "
+     "circuit."},
     {NULL}};
 
 static PyMethodDef qop_gate_obj_methods[] = {

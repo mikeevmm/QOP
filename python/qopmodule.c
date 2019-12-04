@@ -4,7 +4,7 @@
 // Here we initialize not only the module, but also import the NumPy
 // functions (via `import_array()`), and instantiate the internal error
 // module exception type, `QopError`.
-PyMODINIT_FUNC PyInit_qop(void) {
+PyMODINIT_FUNC PyInit_qop() {
   PyObject *mod;
 
   if (PyType_Ready(&QopCircuitType) < 0) return NULL;
@@ -152,6 +152,7 @@ static void qop_circuit_obj_dealloc(QopCircuitObject *obj) {
       PyObject *gate_pyobj_ptr = *(PyObject **)next.data;
       Py_DECREF(gate_pyobj_ptr);
     }
+    iter_free(&refs_iter);
   }
 
   // Free the vector containing the references itself
@@ -306,7 +307,7 @@ static PyObject *qop_gate_create(PyTypeObject *type, PyObject *args,
 
         // Validate npy_params
         {
-          unsigned int ndims = PyArray_NDIM((PyArrayObject *)npy_params);
+          int ndims = PyArray_NDIM((PyArrayObject *)npy_params);
           npy_intp *dims = PyArray_DIMS((PyArrayObject *)npy_params);
           if (ndims != 1 || dims[0] != 1) {
             // The matrix does not have the correct shape; send error
@@ -485,6 +486,80 @@ static PyObject *qop_circuit_add_gate(QopCircuitObject *self, PyObject *args,
   return Py_None;
 }
 
+// Reads the parameters of every gate added to the circuit, and
+// returns the values as a tuple
+static PyObject *qop_circuit_get_parameters(QopCircuitObject *self) {
+  // Get the parameterized gates on the circuit
+  Vector param_gates;
+  {
+    Result init_r = vector_init(&param_gates, sizeof(QopGateObject *), 0);
+    if (!init_r.valid) {
+      PyErr_SetString(QopError, init_r.content.error_details.reason);
+      return NULL;
+    }
+  }
+
+  {
+    Iter py_gate_iter = vector_iter_create(&self->gate_obj_refs);
+    Option next;
+    while ((next = iter_next(&py_gate_iter)).some) {
+      QopGateObject *qop_gate = *(QopGateObject **)next.data;
+      if (qop_gate->param_count != 0) vector_push(&param_gates, &qop_gate);
+    }
+    iter_free(&py_gate_iter);
+  }
+
+  // Create the result tuple to return
+  PyObject *result_tuple = PyTuple_New((Py_ssize_t)param_gates.size);
+
+  {
+    Iter param_gate_iter = vector_iter_create(&param_gates);
+    Option next;
+    unsigned int tuple_index = 0;
+    while ((next = iter_next(&param_gate_iter)).some) {
+      QopGateObject *qop_gate = *(QopGateObject **)next.data;
+
+      // Get the gate's parameters
+      // This is a new reference
+      PyObject *params = qop_gate_get_parameters(qop_gate);
+      if (params == NULL) {
+        // Free as necessary
+        iter_free(&param_gate_iter);
+        vector_free(&param_gates);
+
+        // Raise the error
+        return NULL;
+      }
+
+      // Put the parameters into the tuple
+      {
+        int set_succ =
+            PyTuple_SetItem(result_tuple, (Py_ssize_t)tuple_index, params);
+        if (set_succ < 0) {
+          // Failed to set element of tuple for some reason
+          // Free as appropriate
+          iter_free(&param_gate_iter);
+          vector_free(&param_gates);
+
+          // Send error upstream
+          return NULL;
+        }
+      }
+
+      tuple_index++;
+    }
+    iter_free(&param_gate_iter);
+  }
+
+  // Free the vector
+  vector_free(&param_gates);
+
+  // Return the result tuple
+  // PyTuple_New already returns a new reference, so there is no need
+  // to INCREF it
+  return result_tuple;
+}
+
 // Helper function for `parse_optimization_settings`
 // Releases not only the vector, but all the `GateParameterization`s
 // it contains.
@@ -495,6 +570,7 @@ static void free_reparams_vector(Vector *reparams_vector) {
     GateParameterization *param = (GateParameterization *)next.data;
     optimizer_gate_param_free(param);
   }
+  iter_free(&param_iter);
 }
 
 // Helper function for `qop_circuit_optimize`.
@@ -506,6 +582,16 @@ static void free_reparams_vector(Vector *reparams_vector) {
 //        'rho': value,
 //        'epsilon': value
 //      },
+//      'lbfgs' {
+//        'm': value,
+//        'alpha': value
+//      },
+//      'adam': {
+//        'alpha': value,
+//        'beta_one': value,
+//        'beta_two': value,
+//        'epsilon': value
+//      }
 //      'optimize': {
 //        'gates': [value, value, ...],
 //        'deltas': [ [value], [value, value], ...],
@@ -525,9 +611,12 @@ static void free_reparams_vector(Vector *reparams_vector) {
 static bool parse_optimization_settings(
     PyObject *settings, QopCircuitObject *self, double _Complex *hamiltonian,
     Vector *reparams_vec, Vector *reparams_to_obj_pointer,
-    OptimizerSettings *opt_settings, AdadeltaSettings *ada_settings) {
+    OptimizerSettings *opt_settings, AdadeltaSettings *ada_settings,
+    LbfgsSettings *lbfgs_settings, AdamSettings *adam_settings) {
   // Default settings; the dictionary changes these properties.
   *ada_settings = optimizer_adadelta_get_default();
+  *lbfgs_settings = optimizer_lbfgs_get_default();
+  *adam_settings = optimizer_adam_get_default();
   double stop_at = 1e-4;
   Option_Uint max_iters = option_none_uint();
   bool reparam_given = false;  // If no reparam is given, create one for all
@@ -611,6 +700,168 @@ static bool parse_optimization_settings(
         }
       }
       // Done with ADADELTA settings dict
+    }
+
+    // Try to get the LBFGS dict
+    PyObject *lbfgs_dict = PyDict_GetItemString(settings, "lbfgs");
+    if (lbfgs_dict != NULL) {
+      // Got an object for "lbfgs"! Check it is dictionary
+      if (!PyDict_Check(lbfgs_dict)) {
+        PyErr_SetString(PyExc_ValueError,
+                        "settings.lbfgs object must be a dictionary");
+        // Free the vectors
+        free_reparams_vector(reparams_vec);
+        vector_free(reparams_to_obj_pointer);
+        // Report error
+        return false;
+      }
+
+      // Object *is* dictionary, grab properties
+      // `m` property
+      {
+        PyObject *m = PyDict_GetItemString(lbfgs_dict, "m");
+        if (m != NULL) {
+          // `m` property is specified, check that it's a number
+          if (!PyNumber_Check(m)) {
+            // Got a non numeric `m`
+            PyErr_SetString(PyExc_ValueError,
+                            "settings.lbfgs.m object must be a number");
+
+            // Free the vectors
+            free_reparams_vector(reparams_vec);
+            vector_free(reparams_to_obj_pointer);
+
+            // Report error
+            return false;
+          }
+          // Confirmed `m` is a number, parse to C-number
+          lbfgs_settings->m = (unsigned int)(PyFloat_AsDouble(m));
+        }
+      }
+      // Alpha property
+      {
+        PyObject *alpha = PyDict_GetItemString(lbfgs_dict, "alpha");
+        if (alpha != NULL) {
+          // alpha property is specified, check that it's a number
+          if (!PyNumber_Check(alpha)) {
+            // Got a non-numeric alpha
+            PyErr_SetString(PyExc_ValueError,
+                            "settings.lbfgs.alpha object must be a number");
+
+            // Free the vectors
+            free_reparams_vector(reparams_vec);
+            vector_free(reparams_to_obj_pointer);
+
+            // Report error
+            return false;
+          }
+          // alpha is valid, parse it
+          lbfgs_settings->alpha = PyFloat_AsDouble(alpha);
+        }
+      }
+      // Done with LBFGS settings dict
+    }
+
+    // Try to get the ADAM dict
+    PyObject *adam_dict = PyDict_GetItemString(settings, "adam");
+    if (adam_dict != NULL) {
+      // Got an object for "adam"! Check it is dictionary
+      if (!PyDict_Check(adam_dict)) {
+        PyErr_SetString(PyExc_ValueError,
+                        "settings.adam object must be a dictionary");
+        // Free the vectors
+        free_reparams_vector(reparams_vec);
+        vector_free(reparams_to_obj_pointer);
+        // Report error
+        return false;
+      }
+
+      // Object *is* dictionary, grab properties
+      // `alpha` property
+      {
+        PyObject *alpha = PyDict_GetItemString(adam_dict, "alpha");
+        if (alpha != NULL) {
+          // `alpha` property is specified, check that it's a number
+          if (!PyNumber_Check(alpha)) {
+            // Got a non numeric `alpha`
+            PyErr_SetString(PyExc_ValueError,
+                            "settings.adam.alpha object must be a number");
+
+            // Free the vectors
+            free_reparams_vector(reparams_vec);
+            vector_free(reparams_to_obj_pointer);
+
+            // Report error
+            return false;
+          }
+          // Confirmed alpha is a number, parse to C-number
+          adam_settings->alpha = PyFloat_AsDouble(alpha);
+        }
+      }
+      // beta_one property
+      {
+        PyObject *beta_one = PyDict_GetItemString(adam_dict, "beta_one");
+        if (beta_one != NULL) {
+          // beta_one property is specified, check that it's a number
+          if (!PyNumber_Check(beta_one)) {
+            // Got a non-numeric beta_one
+            PyErr_SetString(PyExc_ValueError,
+                            "settings.adam.beta_one object must be a number");
+
+            // Free the vectors
+            free_reparams_vector(reparams_vec);
+            vector_free(reparams_to_obj_pointer);
+
+            // Report error
+            return false;
+          }
+          // beta_one is valid, parse it
+          adam_settings->beta_one = PyFloat_AsDouble(beta_one);
+        }
+      }
+      // beta_two property
+      {
+        PyObject *beta_two = PyDict_GetItemString(adam_dict, "beta_two");
+        if (beta_two != NULL) {
+          // beta_two property is specified, check that it's a number
+          if (!PyNumber_Check(beta_two)) {
+            // Got a non-numeric beta_two
+            PyErr_SetString(PyExc_ValueError,
+                            "settings.adam.beta_two object must be a number");
+
+            // Free the vectors
+            free_reparams_vector(reparams_vec);
+            vector_free(reparams_to_obj_pointer);
+
+            // Report error
+            return false;
+          }
+          // beta_two is valid, parse it
+          adam_settings->beta_two = PyFloat_AsDouble(beta_two);
+        }
+        // epsilon property
+        {
+          PyObject *epsilon = PyDict_GetItemString(adam_dict, "epsilon");
+          if (epsilon != NULL) {
+            // epsilon property is specified, check that it's a number
+            if (!PyNumber_Check(epsilon)) {
+              // Got a non-numeric epsilon
+              PyErr_SetString(PyExc_ValueError,
+                              "settings.adam.epsilon object must be a number");
+
+              // Free the vectors
+              free_reparams_vector(reparams_vec);
+              vector_free(reparams_to_obj_pointer);
+
+              // Report error
+              return false;
+            }
+            // epsilon is valid, parse it
+            adam_settings->epsilon = PyFloat_AsDouble(epsilon);
+          }
+        }
+      }
+      // Done with ADAM settings dict
     }
 
     // Try to get "optimize" subdictionary
@@ -708,46 +959,53 @@ static bool parse_optimization_settings(
         // will fail for lists and tuples. Whether this is by design
         // or a bug is unknown, but the iterator API seems to work
         // fine with these two types as well.
+        // UPDATE: Even checking the tuple type seems to fail for more
+        // fringe cases, like `(0.1,) * len(x)`, so I've decided not to
+        // check the type at all. Worst case scenario, an odd internal
+        // error will pop up, but since `PyIter_Next` returning NULL
+        // should be handled, it should not be a problem in the long run.
         {
-          // Check gates type
-          if (!(PyList_Check(gates) || PyTuple_Check(gates) ||
-                PyIter_Check(gates))) {
-            // The gates object is not iterable
-            PyErr_SetString(PyExc_ValueError,
-                            "settings.optimize.gates object must be iterable");
-            // DECREF appropriate objects
-            // Use XDECREF for gates and deltas, since we don't know
-            // which are NULL
-            Py_XDECREF(gates);
-            Py_XDECREF(deltas);
+            // Check gates type
+            /*if (!(PyList_Check(gates) || PyTuple_Check(gates) ||
+                  PyIter_Check(gates))) {
+              // The gates object is not iterable
+              PyErr_SetString(PyExc_ValueError,
+                              "settings.optimize.gates object must be
+            iterable");
+              // DECREF appropriate objects
+              // Use XDECREF for gates and deltas, since we don't know
+              // which are NULL
+              Py_XDECREF(gates);
+              Py_XDECREF(deltas);
 
-            // Free vectors
-            free_reparams_vector(reparams_vec);
-            vector_free(reparams_to_obj_pointer);
+              // Free vectors
+              free_reparams_vector(reparams_vec);
+              vector_free(reparams_to_obj_pointer);
 
-            // Report error
-            return false;
-          }
+              // Report error
+              return false;
+            }*/
 
-          // Check deltas type
-          if (!(PyList_Check(deltas) || PyTuple_Check(deltas) ||
-                PyIter_Check(deltas))) {
-            // The gates object is not iterable
-            PyErr_SetString(PyExc_ValueError,
-                            "settings.optimize.deltas object must be iterable");
-            // DECREF appropriate objects
-            // Use XDECREF for gates and deltas, since we don't know
-            // which are NULL
-            Py_XDECREF(gates);
-            Py_XDECREF(deltas);
+            // Check deltas type
+            /*if (!(PyList_Check(deltas) || PyTuple_Check(deltas) ||
+                  PyIter_Check(deltas))) {
+              // The gates object is not iterable
+              PyErr_SetString(PyExc_ValueError,
+                              "settings.optimize.deltas object must be
+            iterable");
+              // DECREF appropriate objects
+              // Use XDECREF for gates and deltas, since we don't know
+              // which are NULL
+              Py_XDECREF(gates);
+              Py_XDECREF(deltas);
 
-            // Free vectors
-            free_reparams_vector(reparams_vec);
-            vector_free(reparams_to_obj_pointer);
+              // Free vectors
+              free_reparams_vector(reparams_vec);
+              vector_free(reparams_to_obj_pointer);
 
-            // Report error
-            return false;
-          }
+              // Report error
+              return false;
+            }*/
         }
 
         // Iterate over `gates` and `deltas` simultaneously, using
@@ -831,7 +1089,8 @@ static bool parse_optimization_settings(
               // We have a delta collection object for this gate.
               // Check that it can be iterated over
               // Again, we must check for all of (list, tuple, iter)
-              if (!(PyList_Check(next_delta_collection) ||
+              // UPDATE: We do not; see comment above.
+              /*if (!(PyList_Check(next_delta_collection) ||
                     PyTuple_Check(next_delta_collection) ||
                     PyIter_Check(next_delta_collection))) {
                 // The delta collection is not iterable
@@ -851,7 +1110,7 @@ static bool parse_optimization_settings(
 
                 // Report error
                 return false;
-              }
+              }*/
 
               // Confirmed that we can iterate over the delta collection.
               // Iterate over the deltas; move these into a vector
@@ -975,8 +1234,8 @@ static bool parse_optimization_settings(
                 // and params are memcpyd into the gate parameterization,
                 // so there's no concerns about lifetime
                 Result init_r = optimizer_gate_param_init(
-                    &gate_param, &gate->gate, deltas_vec.size, gate->params,
-                    deltas_vec.data);
+                    &gate_param, &gate->gate, (unsigned int)deltas_vec.size,
+                    gate->params, deltas_vec.data);
 
                 if (!init_r.valid) {
                   // Something went wrong
@@ -1102,6 +1361,7 @@ static bool parse_optimization_settings(
               // Free vectors
               free_reparams_vector(reparams_vec);
               vector_free(reparams_to_obj_pointer);
+              iter_free(&refd_gates_iter);
               return false;
             }
           }
@@ -1116,6 +1376,7 @@ static bool parse_optimization_settings(
               // Free vectors
               free_reparams_vector(reparams_vec);
               vector_free(reparams_to_obj_pointer);
+              iter_free(&refd_gates_iter);
               return false;
             }
           }
@@ -1129,6 +1390,7 @@ static bool parse_optimization_settings(
               // Free vectors
               free_reparams_vector(reparams_vec);
               vector_free(reparams_to_obj_pointer);
+              iter_free(&refd_gates_iter);
               return false;
             }
           }
@@ -1137,7 +1399,8 @@ static bool parse_optimization_settings(
           continue;
       }  // end switch(id)
     }    // done iterating over gates
-  }      // done automatically creating reparams
+    iter_free(&refd_gates_iter);
+  }  // done automatically creating reparams
 
   // Sanity check that there's something to optimize!
   if (reparams_vec->size == 0) {
@@ -1151,7 +1414,7 @@ static bool parse_optimization_settings(
   {
     Result init_r = optimizer_settings_init(
         opt_settings, &self->circuit, hamiltonian, stop_at, reparams_vec->data,
-        reparams_vec->size, max_iters);
+        (unsigned int)reparams_vec->size, max_iters);
 
     if (!init_r.valid) {
       // Something went wrong initializing the optimizer settings
@@ -1180,21 +1443,24 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
   // Arguments to be parsed
   PyObject *npy_hamiltonian;
   PyObject *settings = NULL;
+  OptimizerAlgorithm opt_algorithm = AlgoAdadelta;
   int writer_fd = -1;
 
   // Parse incoming arguments
   {
     PyObject *hamiltonian_obj = NULL;
     PyObject *given_writer = NULL;
+    const char *algo_id = "adadelta";
 
-    char *kwarg_names[] = {"hamiltonian", "settings", "writer", NULL};
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|O!O", kwarg_names,
+    char *kwarg_names[] = {"hamiltonian", "settings", "writer", "algorithm",
+                           NULL};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|O!Os", kwarg_names,
                                      &hamiltonian_obj, &PyDict_Type, &settings,
-                                     &given_writer)) {
+                                     &given_writer, &algo_id)) {
       // Could not parse the arguments
       PyErr_SetString(PyExc_ValueError,
                       "could not parse arguments to circuit optimization; "
-                      "expected (hamiltonian, settings?, writer?)");
+                      "expected (hamiltonian, settings?, writer?, algorithm?)");
       return NULL;
     }
 
@@ -1239,6 +1505,21 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
       }
       writer_fd = fdescriptor;
     }
+
+    // Parse the given algorithm name
+    // (remember `strcmp` returns the difference; `0` means match)
+    if (!strcmp(algo_id, "adadelta")) {
+      opt_algorithm = AlgoAdadelta;
+    } else if (!strcmp(algo_id, "lbfgs")) {
+      opt_algorithm = AlgoLbfgs;
+    } else if (!strcmp(algo_id, "adam")) {
+      opt_algorithm = AlgoAdam;
+    } else {
+      PyErr_SetString(PyExc_ValueError,
+                      "unknown optimization algorithm; "
+                      "use one of adadelta, lbfgs, adam");
+      return NULL;
+    }
   }
 
   // Prepare the circuit
@@ -1268,11 +1549,14 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
                                    //                     object gate)
   OptimizerSettings opt_settings;
   AdadeltaSettings ada_settings;
+  LbfgsSettings lbfgs_settings;
+  AdamSettings adam_settings;
   {
     bool success = parse_optimization_settings(
         settings, self,
         (double _Complex *)PyArray_DATA((PyArrayObject *)npy_hamiltonian),
-        &reparams_vec, &reparams_to_obj_pointer, &opt_settings, &ada_settings);
+        &reparams_vec, &reparams_to_obj_pointer, &opt_settings, &ada_settings,
+        &lbfgs_settings, &adam_settings);
     if (!success) {
       // Had some error in creating the optimization settings.
       // The error has already been set, so we just send the error
@@ -1284,7 +1568,35 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
   // Create optimizer
   Optimizer optimizer;
   {
-    Result init_r = optimizer_init(&optimizer, opt_settings, ada_settings);
+    OptimizerAlgoSettings opt_algo_settings;
+    {
+      Result init_r;
+      switch (opt_algorithm) {
+        case AlgoAdadelta:
+          init_r = optimizer_algo_settings_init(&opt_algo_settings,
+                                                AlgoAdadelta, &ada_settings);
+          break;
+        case AlgoLbfgs:
+          init_r = optimizer_algo_settings_init(&opt_algo_settings, AlgoLbfgs,
+                                                &lbfgs_settings);
+          break;
+        case AlgoAdam:
+          init_r = optimizer_algo_settings_init(&opt_algo_settings, AlgoAdam,
+                                                &adam_settings);
+          break;
+        default: {
+          init_r = result_get_invalid_reason("missing case for algorithm");
+        };
+      }
+      if (!init_r.valid) {
+        optimizer_settings_free(&opt_settings);
+        free_reparams_vector(&reparams_vec);
+        vector_free(&reparams_to_obj_pointer);
+        return NULL;
+      }
+    }
+
+    Result init_r = optimizer_init(&optimizer, opt_settings, opt_algo_settings);
     if (!init_r.valid) {
       // Something went wrong with initializing the optimizer object
       optimizer_settings_free(&opt_settings);
@@ -1347,7 +1659,7 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
       {
         // Grab the corresponding gate
         QopGateObject *py_gate =
-            *(QopGateObject **)(reparams_to_obj_pointer.data +
+            *(QopGateObject **)((char *)reparams_to_obj_pointer.data +
                                 (reparams_iter.position - 1) *
                                     sizeof(QopGateObject *));
         // Copy the parameters there
@@ -1380,17 +1692,20 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
               // next.data is a pointer to a pointer
               Py_DECREF(*(PyObject **)next.data);
             }
+            iter_free(&results_iter);
           }
           // Free stuff in general
           optimizer_settings_free(&opt_settings);
           free_reparams_vector(&reparams_vec);
           vector_free(&reparams_to_obj_pointer);
           vector_free(&results_vector);
+          iter_free(&reparams_iter);
 
           return NULL;
         }
       }
     }
+    iter_free(&reparams_iter);
   }
 
   // Assemble final results tuple
@@ -1409,6 +1724,7 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
         PyObject *subtuple = *(PyObject **)next.data;
         PyTuple_SetItem(final_result, subtuple_iter.position - 1, subtuple);
       }
+      iter_free(&subtuple_iter);
     }
 
     // Free the results_vector vector.
@@ -1450,6 +1766,7 @@ static PyObject *qop_circuit_get_gates(QopCircuitObject *self) {
     PyTuple_SetItem(gates_tuple, ref_gates_iter.position - 1,
                     (PyObject *)gate_obj);
   }
+  iter_free(&ref_gates_iter);
 
   // The list was created with a new reference, so we can return
   // without further INCREFing it
@@ -1463,7 +1780,7 @@ static PyObject *qop_circuit_run(QopCircuitObject *self, PyObject *args,
                                  PyObject *kwds) {
   // Parse incoming state
   double _Complex state_in[1U << self->qubit_count];
-  memset(state_in, 0, sizeof(double _Complex) * (1U << self->qubit_count));
+  for (unsigned int i = 0; i < (1U << self->qubit_count); ++i) state_in[i] = 0.;
 
   {
     // Parse argument tuple
@@ -1703,7 +2020,7 @@ static void qop_write_parameter(unsigned int flat_index, double param,
   char *stringed;
   int byte_count = asprintf(&stringed, "%e ", param);
   if (byte_count > 0) {
-    write(file_desc, stringed, byte_count);
+    write(file_desc, stringed, (size_t)byte_count);
   }
   free(stringed);
 }
@@ -1715,7 +2032,7 @@ static void qop_write_energy(_Complex double energy, void *context) {
   char *stringed;
   int byte_count = asprintf(&stringed, "%e %e\n", creal(energy), cimag(energy));
   if (byte_count > 0) {
-    write(file_desc, stringed, byte_count);
+    write(file_desc, stringed, (size_t)byte_count);
   }
   free(stringed);
 }
