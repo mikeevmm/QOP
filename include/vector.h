@@ -8,12 +8,12 @@
  **/
 
 #ifndef QOP_VECTOR_H_
-#define QOP_VECTOR_H_ 
+#define QOP_VECTOR_H_
 
-#include "include/iter.h"
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include "include/iter.h"
 
 typedef struct Vector {
   bool init;
@@ -70,7 +70,7 @@ Result vector_raw_push(Vector *v, void *object);
 // This function is a wrapper to `vector_extend_raw`, with safety checks
 // and allocating memory if needed. If performance is critical, and you
 // can ensure that a raw `memcpy` into the vector memory region is valid,
-// consider using `vector_extend_raw`. 
+// consider using `vector_extend_raw`.
 Result vector_extend(Vector *v, void *head, size_t obj_count);
 
 // Extends the vector by all the elements in the given collection,
@@ -122,4 +122,4 @@ Iter vector_iter_create(Vector *v);
 // convenience function.
 Result filter_into_vector(Filter *filter, Vector *vector);
 
-#endif // QOP_VECTOR_H
+#endif  // QOP_VECTOR_H
