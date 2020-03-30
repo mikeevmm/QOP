@@ -201,7 +201,7 @@ Result circuit_harden(Circuit *circuit) {
       CircuitSliceInfo *next_info = (CircuitSliceInfo *)next.data;
       vector_free(&next_info->slice_sg_ptrs);
     }
-    vector_free(&circuit->slice_info_vec);
+    vector_clean(&circuit->slice_info_vec);
     iter_free(&info_iter);
   }
 
@@ -216,7 +216,9 @@ Result circuit_harden(Circuit *circuit) {
     if (new_malloc == NULL) {
       return result_get_invalid_reason("could not malloc");
     }
-    memset(new_malloc, 0, malloc_size);
+    for (unsigned int i = 0; i < malloc_size/sizeof(SoftGate *); ++i) {
+      *((SoftGate **)new_malloc + i) = (SoftGate *)NULL;
+    }
     hardened_gates = (SoftGate **)new_malloc;
   }
 
@@ -228,8 +230,9 @@ Result circuit_harden(Circuit *circuit) {
       SoftGate *soft_gate = (SoftGate *)next.data;
       unsigned int flat_position = soft_gate_flat_position(circuit, soft_gate);
       SoftGate **ptr_pos = hardened_gates + flat_position;
-      if (*(int *)ptr_pos != 0) {
+      if (*ptr_pos != (SoftGate *)NULL) {
         free(hardened_gates);
+        iter_free(&gates_iter);
         return result_get_invalid_reason(
             "soft gates memory position collision");
       }
@@ -265,6 +268,7 @@ Result circuit_harden(Circuit *circuit) {
       Filter slice_gates_filter =
           filter_create(slice_gates_iter, _circuit_filter_is_soft_gate);
       filter_into_vector(&slice_gates_filter, &slice_gates);
+      iter_free(&slice_gates_iter);
     }
 
     // Identify relevant bits in the computational basis
@@ -421,7 +425,7 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
   }
 
   if (circuit->slice_info_vec.size == 0) {
-    return result_get_invalid_reason("CIrcuit slice_info_vec is empty");
+    return result_get_invalid_reason("Circuit slice_info_vec is empty");
   }
 
   unsigned int qubits = (circuit->depth[0]);

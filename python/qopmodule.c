@@ -7,12 +7,15 @@
 PyMODINIT_FUNC PyInit_qop() {
   PyObject *mod;
 
-  if (PyType_Ready(&QopCircuitType) < 0) return NULL;
+  if (PyType_Ready(&QopCircuitType) < 0)
+    return NULL;
 
-  if (PyType_Ready(&QopGateType) < 0) return NULL;
+  if (PyType_Ready(&QopGateType) < 0)
+    return NULL;
 
   mod = PyModule_Create(&qopmodule);
-  if (mod == NULL) return NULL;
+  if (mod == NULL)
+    return NULL;
 
   import_array();
   if (PyErr_Occurred()) {
@@ -187,33 +190,32 @@ static PyObject *qop_gate_create(PyTypeObject *type, PyObject *args,
   {
     // Note that strcmp returns the *difference* between strings,
     // so a perfect match returns `0`
-    if (!strcmp(identifier_str, "c")) {  // Custom gate
+    if (!strcmp(identifier_str, "c")) { // Custom gate
       id = GateCustom;
-    } else if (!strcmp(identifier_str, "i")) {  // Identity gate
+    } else if (!strcmp(identifier_str, "i")) { // Identity gate
       id = GateI;
-    } else if (!strcmp(identifier_str, "x")) {  // X gate
+    } else if (!strcmp(identifier_str, "x")) { // X gate
       id = GateX;
-    } else if (!strcmp(identifier_str, "y")) {  // Y gate
+    } else if (!strcmp(identifier_str, "y")) { // Y gate
       id = GateY;
-    } else if (!strcmp(identifier_str, "z")) {  // Z gate
+    } else if (!strcmp(identifier_str, "z")) { // Z gate
       id = GateZ;
-    } else if (!strcmp(identifier_str, "h")) {  // Hadammard gate
+    } else if (!strcmp(identifier_str, "h")) { // Hadammard gate
       id = GateH;
-    } else if (!strcmp(identifier_str, "sqrtx")) {  // Sqrt(X) gate
+    } else if (!strcmp(identifier_str, "sqrtx")) { // Sqrt(X) gate
       id = GateSqrtX;
-    } else if (!strcmp(identifier_str, "t")) {  // T gate
+    } else if (!strcmp(identifier_str, "t")) { // T gate
       id = GateT;
-    } else if (!strcmp(identifier_str, "s")) {  // S gate
+    } else if (!strcmp(identifier_str, "s")) { // S gate
       id = GateS;
-    } else if (!strcmp(identifier_str, "rx")) {  // R_X gate
+    } else if (!strcmp(identifier_str, "rx")) { // R_X gate
       id = GateRx;
-    } else if (!strcmp(identifier_str, "ry")) {  // R_Y gate
+    } else if (!strcmp(identifier_str, "ry")) { // R_Y gate
       id = GateRy;
-    } else if (!strcmp(identifier_str, "rz")) {  // R_Z gate
+    } else if (!strcmp(identifier_str, "rz")) { // R_Z gate
       id = GateRz;
-    } else {  // Unrecognized string
-      PyErr_SetString(PyExc_ValueError,
-                      "unknown gate identifier; \
+    } else { // Unrecognized string
+      PyErr_SetString(PyExc_ValueError, "unknown gate identifier; \
   use one of i,c,x,y,z,h,sqrtx,t,s,rx,ry,rz");
       return NULL;
     }
@@ -232,115 +234,115 @@ static PyObject *qop_gate_create(PyTypeObject *type, PyObject *args,
     // Initialization will be slightly different for different gate
     // types
     switch (id) {
-      case GateCustom: {
-        // If a custom matrix was specified then the matrix argument
-        // must be given as well
-        if (matrix_optional == NULL) {
-          // Nothing was allocated; we can just pass the error upstream
-          PyErr_SetString(PyExc_ValueError,
-                          "specified custom gate, but did not specify matrix");
-          return NULL;
-        }
+    case GateCustom: {
+      // If a custom matrix was specified then the matrix argument
+      // must be given as well
+      if (matrix_optional == NULL) {
+        // Nothing was allocated; we can just pass the error upstream
+        PyErr_SetString(PyExc_ValueError,
+                        "specified custom gate, but did not specify matrix");
+        return NULL;
+      }
 
-        // Matrix was specified; for convenience we convert the given
-        // object into a numpy matrix
-        // The numpy matrix *steals a reference*! This means that the
-        // `matrix_optional` reference is now a responsability of
-        // `npy_matrix`, and since `matrix_optional` is a reference, then
-        // `npy_matrix` *shouldn't* be dereferenced either.
-        PyObject *npy_matrix =
-            PyArray_FROMANY(matrix_optional, NPY_CDOUBLE, 0, 0,
-                            NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_ALIGNED);
+      // Matrix was specified; for convenience we convert the given
+      // object into a numpy matrix
+      // The numpy matrix *steals a reference*! This means that the
+      // `matrix_optional` reference is now a responsability of
+      // `npy_matrix`, and since `matrix_optional` is a reference, then
+      // `npy_matrix` *shouldn't* be dereferenced either.
+      PyObject *npy_matrix =
+          PyArray_FROMANY(matrix_optional, NPY_CDOUBLE, 0, 0,
+                          NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_ALIGNED);
 
-        if (npy_matrix == NULL) {
-          // Something happened converting to a numpy matrix;
-          // pass the error upstream
-          return NULL;
-        }
+      if (npy_matrix == NULL) {
+        // Something happened converting to a numpy matrix;
+        // pass the error upstream
+        return NULL;
+      }
 
-        // Validate the properties of the given matrix
-        {
-          int ndim = PyArray_NDIM((PyArrayObject *)npy_matrix);
-          npy_intp *dims = PyArray_DIMS((PyArrayObject *)npy_matrix);
+      // Validate the properties of the given matrix
+      {
+        int ndim = PyArray_NDIM((PyArrayObject *)npy_matrix);
+        npy_intp *dims = PyArray_DIMS((PyArrayObject *)npy_matrix);
 
-          if (ndim != 2 || dims[0] != 2 || dims[1] != 2) {
-            // Single qubit gate matrix is malformed
-            PyErr_SetString(
-                PyExc_ValueError,
-                "given custom matrix does not have correct 2x2 dimensions");
-            return NULL;
-          }
-
-          // Copy the matrix into an array the C-qop gate object can own
-          // Because we specified the alignment flags when initializing
-          // the npy array, we can call memcpy on its data pointer
-          double _Complex gate_matrix[2][2];
-          memcpy(gate_matrix, PyArray_DATA((PyArrayObject *)npy_matrix),
-                 GATE_SINGLE_QUBIT_SIZE);
-
-          // Initialize the C-qop gate object, finally
-          // Because its a custom matrix gate, it does not have a
-          // reparameterization function.
-          gate_init_result = gate_init_from_matrix(&gate, gate_matrix, NULL);
-        }
-      } break;
-      case GateRx:
-      case GateRy:
-      case GateRz: {
-        // All rotation gates have the same initialization
-        // A rotation gate requires one parameter
-        if (params_optional == NULL) {
+        if (ndim != 2 || dims[0] != 2 || dims[1] != 2) {
+          // Single qubit gate matrix is malformed
           PyErr_SetString(
               PyExc_ValueError,
-              "rotation gate requires a parameter, but none was given");
+              "given custom matrix does not have correct 2x2 dimensions");
           return NULL;
         }
 
-        // Convert the given parameters array into a numpy object, for
-        // easier handling/validation
-        // Reminder: this initialization *steals* the reference to the
-        // argument, which is already borrowed, so the npy_params object
-        // should not be DECREFd!
-        PyObject *npy_params =
-            PyArray_FROMANY(params_optional, NPY_DOUBLE, 0, 0,
-                            NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_ALIGNED);
+        // Copy the matrix into an array the C-qop gate object can own
+        // Because we specified the alignment flags when initializing
+        // the npy array, we can call memcpy on its data pointer
+        double _Complex gate_matrix[2][2];
+        memcpy(gate_matrix, PyArray_DATA((PyArrayObject *)npy_matrix),
+               GATE_SINGLE_QUBIT_SIZE);
 
-        // Validate npy_params
-        {
-          int ndims = PyArray_NDIM((PyArrayObject *)npy_params);
-          npy_intp *dims = PyArray_DIMS((PyArrayObject *)npy_params);
-          if (ndims != 1 || dims[0] != 1) {
-            // The matrix does not have the correct shape; send error
-            // upstream.
-            PyErr_SetString(PyExc_ValueError,
-                            "specified rotation gate but wrong number of "
-                            "parameters (expecting 1)");
-            return NULL;
-          }
+        // Initialize the C-qop gate object, finally
+        // Because its a custom matrix gate, it does not have a
+        // reparameterization function.
+        gate_init_result = gate_init_from_matrix(&gate, gate_matrix, NULL);
+      }
+    } break;
+    case GateRx:
+    case GateRy:
+    case GateRz: {
+      // All rotation gates have the same initialization
+      // A rotation gate requires one parameter
+      if (params_optional == NULL) {
+        PyErr_SetString(
+            PyExc_ValueError,
+            "rotation gate requires a parameter, but none was given");
+        return NULL;
+      }
+
+      // Convert the given parameters array into a numpy object, for
+      // easier handling/validation
+      // Reminder: this initialization *steals* the reference to the
+      // argument, which is already borrowed, so the npy_params object
+      // should not be DECREFd!
+      PyObject *npy_params =
+          PyArray_FROMANY(params_optional, NPY_DOUBLE, 0, 0,
+                          NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_ALIGNED);
+
+      // Validate npy_params
+      {
+        int ndims = PyArray_NDIM((PyArrayObject *)npy_params);
+        npy_intp *dims = PyArray_DIMS((PyArrayObject *)npy_params);
+        if (ndims != 1 || dims[0] != 1) {
+          // The matrix does not have the correct shape; send error
+          // upstream.
+          PyErr_SetString(PyExc_ValueError,
+                          "specified rotation gate but wrong number of "
+                          "parameters (expecting 1)");
+          return NULL;
         }
+      }
 
-        // "Move" the parameters to the heap, so that they become
-        // responsibility of the C-qop gate object
-        {
-          void *mem = malloc(sizeof(double) * 1);
-          if (mem == NULL) {
-            PyErr_NoMemory();
-            return NULL;
-          }
-          params = (double *)mem;
+      // "Move" the parameters to the heap, so that they become
+      // responsibility of the C-qop gate object
+      {
+        void *mem = malloc(sizeof(double) * 1);
+        if (mem == NULL) {
+          PyErr_NoMemory();
+          return NULL;
         }
-        memcpy(params, PyArray_DATA((PyArrayObject *)npy_params),
-               sizeof(double) * 1);
-        parameter_count = 1;
+        params = (double *)mem;
+      }
+      memcpy(params, PyArray_DATA((PyArrayObject *)npy_params),
+             sizeof(double) * 1);
+      parameter_count = 1;
 
-        // Finally initialize the C-qop gate
-        gate_init_result = gate_init_from_identifier(&gate, id, params);
-      } break;
-      default: {
-        // All other gates are just initialized by their identifier
-        // and have no parameters
-        gate_init_result = gate_init_from_identifier(&gate, id, NULL);
-      } break;
+      // Finally initialize the C-qop gate
+      gate_init_result = gate_init_from_identifier(&gate, id, params);
+    } break;
+    default: {
+      // All other gates are just initialized by their identifier
+      // and have no parameters
+      gate_init_result = gate_init_from_identifier(&gate, id, NULL);
+    } break;
     }
 
     // "Unwrap" the gate initialization result
@@ -504,7 +506,8 @@ static PyObject *qop_circuit_get_parameters(QopCircuitObject *self) {
     Option next;
     while ((next = iter_next(&py_gate_iter)).some) {
       QopGateObject *qop_gate = *(QopGateObject **)next.data;
-      if (qop_gate->param_count != 0) vector_push(&param_gates, &qop_gate);
+      if (qop_gate->param_count != 0)
+        vector_push(&param_gates, &qop_gate);
     }
     iter_free(&py_gate_iter);
   }
@@ -619,14 +622,14 @@ static bool parse_optimization_settings(
   *adam_settings = optimizer_adam_get_default();
   double stop_at = 1e-4;
   Option_Uint max_iters = option_none_uint();
-  bool reparam_given = false;  // If no reparam is given, create one for all
-                               // known reparam'able gates
+  bool reparam_given = false; // If no reparam is given, create one for all
+                              // known reparam'able gates
 
   // Initialize the vectors; these have to be freed on every exception.
   vector_init(reparams_vec, sizeof(GateParameterization), 0);
   vector_init(reparams_to_obj_pointer, sizeof(PyObject *), 0);
 
-  // Very important note: PyDict_GetItemString returns a **borrowed**
+  // NOTE: PyDict_GetItemString returns a borrowed
   // reference! No need to Py_DECREF it!
 
   // Parse the dictionary
@@ -1325,12 +1328,12 @@ static bool parse_optimization_settings(
           // Done using the iterators
           Py_DECREF(gates_iter);
           Py_DECREF(delta_coll_iter);
-        }  // Finished iterating over `gates` and `deltas`
+        } // Finished iterating over `gates` and `deltas`
 
-      }  // Finished parsing `gates`
+      } // Finished parsing `gates`
 
-    }  // Finished parsing "optimize" dictionary
-  }    // Finished parsing settings dictionary
+    } // Finished parsing "optimize" dictionary
+  }   // Finished parsing settings dictionary
 
   // Create parameterizations automatically if none was defined
   if (!reparam_given) {
@@ -1344,63 +1347,63 @@ static bool parse_optimization_settings(
       QopGateObject *py_gate = *(QopGateObject **)next.data;
 
       switch (py_gate->gate.id) {
-        case GateRx:
-        case GateRy:
-        case GateRz: {
-          // We know how to parameterize a rotation gate.
-          GateParameterization param;  // The new param. to add
-          double delta[] = {0.1};
-          {
-            Result init_r = optimizer_gate_param_init(&param, &py_gate->gate, 1,
-                                                      py_gate->params, delta);
-            if (!init_r.valid) {
-              // Something went wrong initializing the param.
-              // Send error upstream
-              PyErr_SetString(QopError, init_r.content.error_details.reason);
+      case GateRx:
+      case GateRy:
+      case GateRz: {
+        // We know how to parameterize a rotation gate.
+        GateParameterization param; // The new param. to add
+        double delta[] = {0.1};
+        {
+          Result init_r = optimizer_gate_param_init(&param, &py_gate->gate, 1,
+                                                    py_gate->params, delta);
+          if (!init_r.valid) {
+            // Something went wrong initializing the param.
+            // Send error upstream
+            PyErr_SetString(QopError, init_r.content.error_details.reason);
 
-              // Free vectors
-              free_reparams_vector(reparams_vec);
-              vector_free(reparams_to_obj_pointer);
-              iter_free(&refd_gates_iter);
-              return false;
-            }
+            // Free vectors
+            free_reparams_vector(reparams_vec);
+            vector_free(reparams_to_obj_pointer);
+            iter_free(&refd_gates_iter);
+            return false;
           }
-          // Successfully initialized parameterization; push
-          {
-            Result push_r = vector_push(reparams_vec, &param);
-            if (!push_r.valid) {
-              // Something went wrong pushing
-              // Send the error upstream
-              PyErr_SetString(QopError, push_r.content.error_details.reason);
+        }
+        // Successfully initialized parameterization; push
+        {
+          Result push_r = vector_push(reparams_vec, &param);
+          if (!push_r.valid) {
+            // Something went wrong pushing
+            // Send the error upstream
+            PyErr_SetString(QopError, push_r.content.error_details.reason);
 
-              // Free vectors
-              free_reparams_vector(reparams_vec);
-              vector_free(reparams_to_obj_pointer);
-              iter_free(&refd_gates_iter);
-              return false;
-            }
+            // Free vectors
+            free_reparams_vector(reparams_vec);
+            vector_free(reparams_to_obj_pointer);
+            iter_free(&refd_gates_iter);
+            return false;
           }
-          {
-            Result push_r = vector_push(reparams_to_obj_pointer, &py_gate);
-            if (!push_r.valid) {
-              // Something went wrong pushing
-              // Send the error upstream
-              PyErr_SetString(QopError, push_r.content.error_details.reason);
+        }
+        {
+          Result push_r = vector_push(reparams_to_obj_pointer, &py_gate);
+          if (!push_r.valid) {
+            // Something went wrong pushing
+            // Send the error upstream
+            PyErr_SetString(QopError, push_r.content.error_details.reason);
 
-              // Free vectors
-              free_reparams_vector(reparams_vec);
-              vector_free(reparams_to_obj_pointer);
-              iter_free(&refd_gates_iter);
-              return false;
-            }
+            // Free vectors
+            free_reparams_vector(reparams_vec);
+            vector_free(reparams_to_obj_pointer);
+            iter_free(&refd_gates_iter);
+            return false;
           }
-        } break;
-        default:
-          continue;
-      }  // end switch(id)
-    }    // done iterating over gates
+        }
+      } break;
+      default:
+        continue;
+      } // end switch(id)
+    }   // done iterating over gates
     iter_free(&refd_gates_iter);
-  }  // done automatically creating reparams
+  } // done automatically creating reparams
 
   // Sanity check that there's something to optimize!
   if (reparams_vec->size == 0) {
@@ -1515,9 +1518,8 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
     } else if (!strcmp(algo_id, "adam")) {
       opt_algorithm = AlgoAdam;
     } else {
-      PyErr_SetString(PyExc_ValueError,
-                      "unknown optimization algorithm; "
-                      "use one of adadelta, lbfgs, adam");
+      PyErr_SetString(PyExc_ValueError, "unknown optimization algorithm; "
+                                        "use one of adadelta, lbfgs, adam");
       return NULL;
     }
   }
@@ -1545,8 +1547,8 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
 
   // Create the optimizer settings
   Vector reparams_vec;
-  Vector reparams_to_obj_pointer;  // (reparam index) -> (associated python
-                                   //                     object gate)
+  Vector reparams_to_obj_pointer; // (reparam index) -> (associated python
+                                  //                     object gate)
   OptimizerSettings opt_settings;
   AdadeltaSettings ada_settings;
   LbfgsSettings lbfgs_settings;
@@ -1572,21 +1574,21 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
     {
       Result init_r;
       switch (opt_algorithm) {
-        case AlgoAdadelta:
-          init_r = optimizer_algo_settings_init(&opt_algo_settings,
-                                                AlgoAdadelta, &ada_settings);
-          break;
-        case AlgoLbfgs:
-          init_r = optimizer_algo_settings_init(&opt_algo_settings, AlgoLbfgs,
-                                                &lbfgs_settings);
-          break;
-        case AlgoAdam:
-          init_r = optimizer_algo_settings_init(&opt_algo_settings, AlgoAdam,
-                                                &adam_settings);
-          break;
-        default: {
-          init_r = result_get_invalid_reason("missing case for algorithm");
-        };
+      case AlgoAdadelta:
+        init_r = optimizer_algo_settings_init(&opt_algo_settings, AlgoAdadelta,
+                                              &ada_settings);
+        break;
+      case AlgoLbfgs:
+        init_r = optimizer_algo_settings_init(&opt_algo_settings, AlgoLbfgs,
+                                              &lbfgs_settings);
+        break;
+      case AlgoAdam:
+        init_r = optimizer_algo_settings_init(&opt_algo_settings, AlgoAdam,
+                                              &adam_settings);
+        break;
+      default: {
+        init_r = result_get_invalid_reason("missing case for algorithm");
+      };
       }
       if (!init_r.valid) {
         optimizer_settings_free(&opt_settings);
@@ -1780,9 +1782,10 @@ static PyObject *qop_circuit_run(QopCircuitObject *self, PyObject *args,
                                  PyObject *kwds) {
   // Parse incoming state
   double _Complex state_in[1U << self->qubit_count];
-  for (unsigned int i = 0; i < (1U << self->qubit_count); ++i) state_in[i] = 0.;
-
   {
+    for (unsigned int i = 0; i < (1U << self->qubit_count); ++i)
+      state_in[i] = 0.;
+
     // Parse argument tuple
     PyObject *state_in_obj;
     char *kwarg_names[] = {"state_in", NULL};
@@ -1792,7 +1795,7 @@ static PyObject *qop_circuit_run(QopCircuitObject *self, PyObject *args,
       return NULL;
     }
 
-    // Convert to numpy array
+    // Convert to numpy array (steals reference)
     PyObject *as_arr =
         PyArray_FROMANY(state_in_obj, NPY_CDOUBLE, 1, 1,
                         NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_ALIGNED);
@@ -1825,9 +1828,15 @@ static PyObject *qop_circuit_run(QopCircuitObject *self, PyObject *args,
     }
 
     // Copy contents to in_state
-    memcpy(state_in, PyArray_DATA((PyArrayObject *)as_arr),
-           sizeof(double _Complex) * vec_size);
-
+    // memcpy(state_in, PyArray_DATA((PyArrayObject *)as_arr),
+    //       sizeof(double _Complex) * vec_size);
+    {
+      void *pyarr_data = PyArray_DATA((PyArrayObject *)as_arr);
+      npy_intp stride = PyArray_STRIDE((PyArrayObject *)as_arr, 0);
+      for (unsigned int i = 0; i < vec_size; ++i) {
+        state_in[i] = *(double _Complex *)((char *)pyarr_data + stride);
+      }
+    }
     // Note that we **do not** DECREF `state_in_obj` or `as_arr` here,
     // since `state_in_obj` is passed in by reference, and `as_arr` steals
     // that reference
@@ -1903,13 +1912,6 @@ static PyObject *qop_gate_reparameterize(QopGateObject *self, PyObject *args,
       return NULL;
     }
 
-    // Validate that we can iterate over the parameters
-    if (!(PyList_Check(params_arg) || PyTuple_Check(params_arg) ||
-          PyIter_Check(params_arg))) {
-      PyErr_SetString(PyExc_ValueError, "expecting iterable parameters");
-      return NULL;
-    }
-
     // Initialize the vector where we'll copy the new parameters
     {
       Result init_r = vector_init(&params, sizeof(double), 1);
@@ -1921,6 +1923,7 @@ static PyObject *qop_gate_reparameterize(QopGateObject *self, PyObject *args,
     }
 
     // Iterate over the python object
+    // (doubles as is-iterator validation)
     {
       PyObject *py_args_iter = PyObject_GetIter(params_arg);
       if (py_args_iter == NULL) {
@@ -1935,6 +1938,7 @@ static PyObject *qop_gate_reparameterize(QopGateObject *self, PyObject *args,
         if (!PyNumber_Check(next)) {
           // Not a number!
           PyErr_SetString(PyExc_ValueError, "got unexpected non-numeric value");
+          Py_DECREF(next);
           Py_DECREF(py_args_iter);
           vector_free(&params);
           return NULL;
@@ -1950,6 +1954,7 @@ static PyObject *qop_gate_reparameterize(QopGateObject *self, PyObject *args,
             // Pushing failed for some reason,
             // send error upstream
             PyErr_SetString(QopError, push_r.content.error_details.reason);
+            Py_DECREF(next);
             Py_DECREF(py_args_iter);
             vector_free(&params);
             return NULL;
