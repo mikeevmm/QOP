@@ -1832,9 +1832,10 @@ static PyObject *qop_circuit_run(QopCircuitObject *self, PyObject *args,
     //       sizeof(double _Complex) * vec_size);
     {
       void *pyarr_data = PyArray_DATA((PyArrayObject *)as_arr);
-      npy_intp stride = PyArray_STRIDE((PyArrayObject *)as_arr, 0);
+      npy_intp stride = PyArray_STRIDES((PyArrayObject *)as_arr)[0];
       for (unsigned int i = 0; i < vec_size; ++i) {
-        state_in[i] = *(double _Complex *)((char *)pyarr_data + stride);
+        double _Complex value = *(double _Complex *)((char *)pyarr_data + i*stride);
+        state_in[i] = value;
       }
     }
     // Note that we **do not** DECREF `state_in_obj` or `as_arr` here,

@@ -7,7 +7,8 @@ sources = [x for x in glob(dirname(realpath(__file__)) + '/src/*.c', recursive=T
            if not x.endswith('main.c')]
 py_sources = glob(dirname(realpath(__file__)) + '/python/*.c')
 extras = ['-Wall', '-Wextra', '-Wconversion', '-Wno-unused-variable',
-          '-Wno-unused', '-pedantic', '-Wmissing-prototypes', '-Wstrict-prototypes', '-O3']
+          '-Wno-unused', '-pedantic', '-Wmissing-prototypes',
+          '-Wstrict-prototypes', '-O3']
 
 module = Extension('qop', sources=sources + py_sources,
                    include_dirs=[

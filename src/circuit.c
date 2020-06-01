@@ -496,7 +496,12 @@ Result circuit_run(Circuit *circuit, double _Complex (*inout)[]) {
       }
     }
 
-    for (unsigned int i = 0; i < (1U << qubits); ++i) (*inout)[i] = output[i];
+	//printf("[");
+    for (unsigned int i = 0; i < (1U << qubits); ++i) {
+		//printf("%f+i%f ", creal(output[i]), cimag(output[i]));
+		(*inout)[i] = output[i];
+	}
+	//printf("]");
   }
 
   return result_get_valid_with_data(inout);
