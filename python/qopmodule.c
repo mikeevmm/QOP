@@ -574,6 +574,7 @@ static void free_reparams_vector(Vector *reparams_vector) {
     optimizer_gate_param_free(param);
   }
   iter_free(&param_iter);
+  vector_free(reparams_vector);
 }
 
 // Helper function for `qop_circuit_optimize`.
