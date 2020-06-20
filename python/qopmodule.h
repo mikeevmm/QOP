@@ -65,7 +65,7 @@ static void qop_write_energy(_Complex double energy, void *context);
 static PyMemberDef qop_circuit_obj_members[] = {
     {"qubits", T_INT, offsetof(QopCircuitObject, qubit_count), READONLY,
      "Number of qubits (lines) in the circuit."},
-    {NULL}};
+    {NULL, NULL, 0, NULL}};
 
 static PyMethodDef qop_circuit_obj_methods[] = {
     {"add_gate", (PyCFunction)qop_circuit_add_gate,
@@ -80,7 +80,7 @@ static PyMethodDef qop_circuit_obj_methods[] = {
     {"get_parameters", (PyCFunction)qop_circuit_get_parameters, METH_NOARGS,
      "Returns a list of all the parameters of every parameterized gate in the "
      "circuit."},
-    {NULL}};
+    {NULL, NULL, 0, NULL}};
 
 static PyMethodDef qop_gate_obj_methods[] = {
     {"reparameterize", (PyCFunction)qop_gate_reparameterize,
@@ -90,7 +90,7 @@ static PyMethodDef qop_gate_obj_methods[] = {
      "Get a tuple of the gate's current parameters."},
     {"get_matrix", (PyCFunction)qop_gate_get_matrix, METH_NOARGS,
      "Get the 2x2 matrix representation of this gate."},
-    {NULL}};
+    {NULL, NULL, 0, NULL}};
 
 static PyTypeObject QopCircuitType = {
     PyVarObject_HEAD_INIT(NULL, 0).tp_name = "qop.Circuit",

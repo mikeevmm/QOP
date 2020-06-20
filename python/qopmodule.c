@@ -248,11 +248,10 @@ static PyObject *qop_gate_create(PyTypeObject *type, PyObject *args,
       // object into a numpy matrix
       // The numpy matrix *steals a reference*! This means that the
       // `matrix_optional` reference is now a responsability of
-      // `npy_matrix`, and since `matrix_optional` is a reference, then
-      // `npy_matrix` *shouldn't* be dereferenced either.
-      PyObject *npy_matrix =
-          PyArray_FROMANY(matrix_optional, NPY_CDOUBLE, 0, 0,
-                          NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_ALIGNED);
+      // `npy_matrix`
+      PyObject *npy_matrix = PyArray_FromAny(
+          matrix_optional, PyArray_DescrFromType(NPY_CDOUBLE), 0, 0,
+          NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_ALIGNED, NULL);
 
       if (npy_matrix == NULL) {
         // Something happened converting to a numpy matrix;
@@ -277,8 +276,16 @@ static PyObject *qop_gate_create(PyTypeObject *type, PyObject *args,
         // Because we specified the alignment flags when initializing
         // the npy array, we can call memcpy on its data pointer
         double _Complex gate_matrix[2][2];
-        memcpy(gate_matrix, PyArray_DATA((PyArrayObject *)npy_matrix),
-               GATE_SINGLE_QUBIT_SIZE);
+        for (int i = 0; i < 2; i++) {
+          for (int j = 0; j < 2; j++) {
+            double _Complex matrix_elem = *(double _Complex *)PyArray_GETPTR2(
+                (PyArrayObject *)npy_matrix, i, j);
+            gate_matrix[i][j] = matrix_elem;
+          }
+        }
+
+        // `npy_matrix` is no lonter needed
+        Py_DECREF(npy_matrix);
 
         // Initialize the C-qop gate object, finally
         // Because its a custom matrix gate, it does not have a
@@ -304,8 +311,8 @@ static PyObject *qop_gate_create(PyTypeObject *type, PyObject *args,
       // argument, which is already borrowed, so the npy_params object
       // should not be DECREFd!
       PyObject *npy_params =
-          PyArray_FROMANY(params_optional, NPY_DOUBLE, 0, 0,
-                          NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_ALIGNED);
+          PyArray_FromAny(params_optional, PyArray_DescrFromType(NPY_DOUBLE), 0,
+                          0, NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_ALIGNED, NULL);
 
       // Validate npy_params
       {
@@ -529,6 +536,7 @@ static PyObject *qop_circuit_get_parameters(QopCircuitObject *self) {
         // Free as necessary
         iter_free(&param_gate_iter);
         vector_free(&param_gates);
+        Py_DECREF(result_tuple);
 
         // Raise the error
         return NULL;
@@ -543,6 +551,7 @@ static PyObject *qop_circuit_get_parameters(QopCircuitObject *self) {
           // Free as appropriate
           iter_free(&param_gate_iter);
           vector_free(&param_gates);
+          Py_DECREF(result_tuple);
 
           // Send error upstream
           return NULL;
@@ -1469,11 +1478,9 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
     }
 
     // Convert hamiltonian object to numpy array
-    // Remember: creating a npy array steals a reference! and the
-    //  argument is a borrow, so it should **not** be DECREFd!
     npy_hamiltonian =
-        PyArray_FROMANY(hamiltonian_obj, NPY_CDOUBLE, 2, 2,
-                        NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_ALIGNED);
+        PyArray_FromAny(hamiltonian_obj, PyArray_DescrFromType(NPY_CDOUBLE), 2,
+                        2, NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_ALIGNED, NULL);
     if (npy_hamiltonian == NULL) {
       // Could not numpy parse the hamiltonian py object
       PyErr_SetString(PyExc_ValueError,
@@ -1736,6 +1743,7 @@ static PyObject *qop_circuit_optimize(QopCircuitObject *self, PyObject *args,
   }
 
   // Cleanup
+  Py_DECREF(npy_hamiltonian);
   optimizer_settings_free(&opt_settings);
   free_reparams_vector(&reparams_vec);
   vector_free(&reparams_to_obj_pointer);
@@ -1798,8 +1806,8 @@ static PyObject *qop_circuit_run(QopCircuitObject *self, PyObject *args,
 
     // Convert to numpy array (steals reference)
     PyObject *as_arr =
-        PyArray_FROMANY(state_in_obj, NPY_CDOUBLE, 1, 1,
-                        NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_ALIGNED);
+        PyArray_FromAny(state_in_obj, PyArray_DescrFromType(NPY_CDOUBLE), 1, 1,
+                        NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_ALIGNED, NULL);
     if (as_arr == NULL) {
       PyErr_SetString(PyExc_ValueError,
                       "cannot interpret state_in as 1D vector");
@@ -1807,7 +1815,7 @@ static PyObject *qop_circuit_run(QopCircuitObject *self, PyObject *args,
     }
 
     // Validate size of the array
-    unsigned int vec_size = PyArray_SIZE((PyArrayObject *)as_arr);
+    unsigned int vec_size = PyArray_Size((PyArrayObject *)as_arr);
     if (vec_size != (1U << self->qubit_count)) {
       PyErr_SetString(PyExc_ValueError,
                       "given input vector does not match size of circuit");
@@ -1815,33 +1823,36 @@ static PyObject *qop_circuit_run(QopCircuitObject *self, PyObject *args,
     }
 
     // Validate 2-norm of the array
-    double norm = 0;
-    for (unsigned int i = 0; i < vec_size; ++i) {
-      double _Complex elem =
-          *(double _Complex *)PyArray_GETPTR1((PyArrayObject *)as_arr, i);
-      norm += creal(elem * conj(elem));
-    }
-    if (fabs(norm - 1.) > 1e-6) {
-      PyErr_SetString(
-          PyExc_ValueError,
-          "the given in state's 2-norm differs of 1 by more than 1E-6");
-      return NULL;
+    {
+      double norm = 0;
+      for (unsigned int i = 0; i < vec_size; ++i) {
+        double _Complex elem =
+            *(double _Complex *)PyArray_GETPTR1((PyArrayObject *)as_arr, i);
+        norm += creal(elem * conj(elem));
+      }
+
+      if (fabs(norm - 1.) > 1e-6) {
+        PyErr_SetString(
+            PyExc_ValueError,
+            "the given in state's 2-norm differs of 1 by more than 1E-6");
+        return NULL;
+      }
     }
 
     // Copy contents to in_state
     // memcpy(state_in, PyArray_DATA((PyArrayObject *)as_arr),
     //       sizeof(double _Complex) * vec_size);
     {
-      void *pyarr_data = PyArray_DATA((PyArrayObject *)as_arr);
-      npy_intp stride = PyArray_STRIDES((PyArrayObject *)as_arr)[0];
       for (unsigned int i = 0; i < vec_size; ++i) {
-        double _Complex value = *(double _Complex *)((char *)pyarr_data + i*stride);
+        double _Complex value =
+            *(double _Complex *)PyArray_GETPTR1((PyArrayObject *)as_arr, i);
         state_in[i] = value;
       }
     }
-    // Note that we **do not** DECREF `state_in_obj` or `as_arr` here,
-    // since `state_in_obj` is passed in by reference, and `as_arr` steals
-    // that reference
+
+    // Note that we **do not** DECREF `state_in_obj`,
+    // since `state_in_obj` is passed in by reference
+    Py_DECREF(as_arr);
   }
 
   // Compact and harden the circuit if needed
@@ -1984,7 +1995,8 @@ static PyObject *qop_gate_reparameterize(QopGateObject *self, PyObject *args,
   self->gate.reparamFn(&self->gate.matrix, params.data);
 
   // Save the parameters
-  memcpy(self->params, params.data, params.size * sizeof(double));
+  for (unsigned int i = 0; i < (unsigned int)params.size; ++i)
+    self->params[i] = *(((double *)params.data) + i);
 
   // Cleanup
   vector_free(&params);
