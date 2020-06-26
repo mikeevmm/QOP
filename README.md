@@ -53,6 +53,11 @@ Or if you don't want to install the library at all (in which case it can be foun
 no_install=y make py_build
 ```
 
+## License
+
+This work is licensed under a Creative Commons Attribution NonCommercial
+(CC-BY-NC) license. See `LICENSE.txt` for the full license.
+
 ---
 
 ¹ pronounced qwop (kwɒp), [like the game](http://www.foddy.net/Athletics.html).
