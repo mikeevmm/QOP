@@ -135,9 +135,9 @@ Result vector_pop(Vector *v, void *into) {
     return result_get_invalid_reason("tried to pop uninitialized vector");
   }
 
-  if (into == NULL) {
+  if (into != NULL) {
     void *copied =
-        memcpy(into, (char *)v->data + v->size * v->obj_size, v->obj_size);
+        memcpy(into, (char *)v->data + (v->size - 1) * v->obj_size, v->obj_size);
     if (!copied) {
       return result_get_invalid_reason("could not memcpy");
     }
